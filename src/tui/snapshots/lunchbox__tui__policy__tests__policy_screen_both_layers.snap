@@ -1,0 +1,10 @@
+---
+source: src/tui/policy.rs
+expression: "frame_to_string(frame.buffer, frame.area)"
+---
+global                              project
+/home/w/.lunchbox/config.toml       ./lunchbox.toml
+exists  true                        exists  true
+allow   (empty)                     allow:
+deny:                                 demo-review
+  old-thing                         deny   (empty)

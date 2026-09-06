@@ -6,6 +6,8 @@ mod mount;
 mod resolve;
 mod run;
 mod tokens;
+#[cfg(any(feature = "tui-doctor", feature = "tui-menu"))]
+mod tui;
 
 use adapter::{Adapter, SelftestOutcome};
 use anyhow::{Context, Result, bail};
@@ -61,8 +63,41 @@ enum CliCommand {
         #[arg(long)]
         explain: bool,
     },
+    Tui {
+        #[command(subcommand)]
+        screen: TuiScreen,
+    },
 }
 
+#[derive(Subcommand)]
+enum TuiScreen {
+    Doctor {
+        #[arg(long)]
+        adapter: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Preview {
+        #[arg(long = "skill", value_name = "PIN")]
+        skills: Vec<String>,
+        #[arg(long = "library", value_name = "PATH")]
+        libraries: Vec<String>,
+        #[arg(long)]
+        adapter: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Picker {
+        #[arg(long = "library", value_name = "PATH")]
+        libraries: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    Policy {
+        #[arg(long)]
+        json: bool,
+    },
+}
 #[derive(Args)]
 struct StartArgs {
     #[arg(long)]
@@ -100,6 +135,7 @@ fn main() -> ExitCode {
         CliCommand::Gc => cmd_gc(),
         CliCommand::Why { run_id, json } => cmd_why(run_id.as_deref(), json),
         CliCommand::Adapters { explain } => cmd_adapters(explain),
+        CliCommand::Tui { screen } => cmd_tui(screen),
     };
     match result {
         Ok(code) => code,
@@ -110,47 +146,39 @@ fn main() -> ExitCode {
     }
 }
 
-fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
+fn doctor_data(adapter_override: Option<&str>) -> Result<adapter::DoctorReport> {
     let cfg = Config::load()?;
     let adapter_name = adapter_override.unwrap_or(&cfg.default_adapter);
     let adapter = adapter::resolve_adapter(adapter_name)?;
-    let version = adapter.detect()?;
-    let reports = adapter::scan_dirs(adapter.as_ref(), &cfg);
-    let (without_tokens, union) = adapter::union_from(&reports);
-    let mut fattest = union.clone();
-    fattest.sort_by(|a, b| b.tokens.cmp(&a.tokens).then(a.name.cmp(&b.name)));
-    fattest.truncate(3);
-    let duplicates = adapter::duplicates(&union);
+    adapter::doctor_report(adapter.as_ref(), &cfg)
+}
+
+fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
+    let report = doctor_data(adapter_override)?;
+    let fattest = report.fattest();
+    let duplicates = adapter::duplicates(&report.union);
     if json {
-        let output = json!({
-            "adapter": adapter_name,
-            "adapter_version": version,
-            "skill_dirs": reports.iter().map(|r| json!({
-                "dir": r.dir,
-                "exists": r.exists,
-                "skills": r.skills.len(),
-            })).collect::<Vec<_>>(),
-            "menu_tokens": without_tokens,
-            "fattest": fattest.iter().map(|s| json!({"name": s.name, "tokens": s.tokens})).collect::<Vec<_>>(),
-            "duplicates": duplicates.iter().map(|group| group.iter().map(|s| s.name.clone()).collect::<Vec<_>>()).collect::<Vec<_>>(),
-        });
-        println!("{output}");
+        println!("{}", report.to_json());
     } else {
-        match &version {
-            Some(version) => println!("adapter        {adapter_name} {version}"),
-            None => println!("adapter        {adapter_name} (not detected)"),
+        match &report.adapter_version {
+            Some(version) => println!("adapter        {} {version}", report.adapter),
+            None => println!("adapter        {} (not detected)", report.adapter),
         }
         println!("skill dirs:");
-        for report in &reports {
-            let state = if report.exists {
-                format!("{} skills", report.skills.len())
+        for dir_report in &report.dirs {
+            let state = if dir_report.exists {
+                format!("{} skills", dir_report.skills.len())
             } else {
                 "absent".to_string()
             };
-            println!("  {:<40} {}", report.dir.display(), state);
+            println!("  {:<40} {}", dir_report.dir.display(), state);
         }
-        println!("menu_tokens    {without_tokens}  ({} skills union)", union.len());
-        if union.is_empty() {
+        println!(
+            "menu_tokens    {}  ({} skills union)",
+            report.menu_tokens,
+            report.union.len()
+        );
+        if report.union.is_empty() {
             println!("               no skills found in adapter skill dirs");
         }
         println!("fattest:");
@@ -172,6 +200,150 @@ fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+#[cfg(not(all(feature = "tui-doctor", feature = "tui-menu")))]
+fn tui_feature_missing(feature: &str, plain_equivalent: &str) -> String {
+    if cfg!(any(feature = "tui-doctor", feature = "tui-menu")) {
+        format!(
+            "this build has no TUI screens for feature '{feature}'; rebuild with default \
+             features or --features {feature} (plain CLI equivalent: {plain_equivalent})"
+        )
+    } else {
+        "this build has no TUI screens; rebuild with default features or \
+         --features tui-doctor,tui-menu (plain CLI equivalents: lunchbox doctor, lunchbox start)"
+            .to_string()
+    }
+}
+fn cmd_tui(screen: TuiScreen) -> Result<ExitCode> {
+    match screen {
+        TuiScreen::Doctor { adapter, json } => tui_doctor(adapter.as_deref(), json),
+        TuiScreen::Preview {
+            skills,
+            libraries,
+            adapter,
+            json,
+        } => tui_preview(skills, libraries, adapter, json),
+        TuiScreen::Picker { libraries, json } => tui_picker(libraries, json),
+        TuiScreen::Policy { json } => tui_policy(json),
+    }
+}
+
+fn tui_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
+    #[cfg(not(feature = "tui-doctor"))]
+    {
+        let _ = (adapter_override, json);
+        bail!(tui_feature_missing("tui-doctor", "lunchbox doctor"));
+    }
+    #[cfg(feature = "tui-doctor")]
+    {
+        let report = doctor_data(adapter_override)?;
+        if json {
+            println!("{}", report.to_json());
+            Ok(ExitCode::SUCCESS)
+        } else {
+            crate::tui::doctor::run(report)?;
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+fn tui_preview(
+    skills: Vec<String>,
+    libraries: Vec<String>,
+    adapter: Option<String>,
+    json: bool,
+) -> Result<ExitCode> {
+    #[cfg(not(feature = "tui-doctor"))]
+    {
+        let _ = (skills, libraries, adapter, json);
+        bail!(tui_feature_missing("tui-doctor", "lunchbox doctor"));
+    }
+    #[cfg(feature = "tui-doctor")]
+    {
+        let mut cfg = Config::load()?;
+        if let Some(adapter) = adapter {
+            cfg.default_adapter = adapter;
+        }
+        let libraries: Vec<PathBuf> = libraries.iter().map(PathBuf::from).collect();
+        let preview = tokens::preview(&cfg, &libraries, &skills)?;
+        if json {
+            let output = json!({
+                "skills": preview.skills.iter().map(|s| json!({"name": s.name, "tokens": s.tokens})).collect::<Vec<_>>(),
+                "menu_tokens": preview.menu_tokens,
+                "without_menu_tokens": preview.without_menu_tokens,
+                "max_menu_tokens": preview.max_menu_tokens,
+                "over_budget": preview.over_budget,
+            });
+            println!("{output}");
+            Ok(ExitCode::SUCCESS)
+        } else {
+            let listing = library::scan_roots(&cfg.search_roots(&libraries));
+            let state = tui::preview::PreviewState::new(
+                listing,
+                preview.without_menu_tokens,
+                preview.max_menu_tokens,
+            );
+            tui::preview::run(state)?;
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+fn tui_picker(libraries: Vec<String>, json: bool) -> Result<ExitCode> {
+    #[cfg(not(feature = "tui-menu"))]
+    {
+        let _ = (libraries, json);
+        bail!(tui_feature_missing("tui-menu", "lunchbox start"));
+    }
+    #[cfg(feature = "tui-menu")]
+    {
+        let cfg = Config::load()?;
+        let libraries: Vec<PathBuf> = libraries.iter().map(PathBuf::from).collect();
+        let listing = library::scan_roots(&cfg.search_roots(&libraries));
+        if json {
+            let output = json!({
+                "library": listing.iter().map(|s| json!({
+                    "name": s.name,
+                    "tokens": s.tokens,
+                    "source": s.source,
+                })).collect::<Vec<_>>(),
+            });
+            println!("{output}");
+            Ok(ExitCode::SUCCESS)
+        } else {
+            let state = tui::picker::PickerState::new(cfg, libraries, listing);
+            tui::picker::run(state)?;
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
+fn tui_policy(json: bool) -> Result<ExitCode> {
+    #[cfg(not(feature = "tui-menu"))]
+    {
+        let _ = json;
+        bail!(tui_feature_missing("tui-menu", "lunchbox policy"));
+    }
+    #[cfg(feature = "tui-menu")]
+    {
+        let global = config::layer_report(&config::global_path())?;
+        let project = config::layer_report(&config::project_path())?;
+        if json {
+            let cfg = Config::load()?;
+            let output = json!({
+                "global": {"path": global.path, "exists": global.exists, "allow": global.allow, "deny": global.deny},
+                "project": {"path": project.path, "exists": project.exists, "allow": project.allow, "deny": project.deny},
+                "effective": {"allow": cfg.allow, "deny": cfg.deny},
+            });
+            println!("{output}");
+            Ok(ExitCode::SUCCESS)
+        } else {
+            let state = tui::policy::PolicyState::load()?;
+            tui::policy::run(state)?;
+            Ok(ExitCode::SUCCESS)
+        }
+    }
+}
+
 fn cmd_start(args: StartArgs) -> Result<ExitCode> {
     if let Some(_from) = &args.from {
         bail!("manifest-driven multi-worker runs arrive with Path B");
@@ -187,18 +359,22 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
         harness_argv.remove(0);
     }
     let libraries: Vec<PathBuf> = args.libraries.iter().map(PathBuf::from).collect();
-    let locked = resolve::resolve(&args.skills, &cfg, &libraries)?;
     let mut signals = Signals::new([SIGINT, SIGTERM])?;
-    let run_id = run::new_run_id()?;
-    let run_dir = cfg.runs_dir.join(&run_id);
+    let prepared = prepare_run(
+        &cfg,
+        &adapter_name,
+        args.task.as_deref().unwrap_or(""),
+        &args.skills,
+        &libraries,
+        &harness_argv,
+    )?;
+    let run_dir = prepared.run_dir.clone();
     let outcome = start_run(
         &args,
         &cfg,
         adapter.as_ref(),
-        &run_id,
-        &run_dir,
+        prepared,
         &harness_argv,
-        &locked,
         &mut signals,
     );
     match outcome {
@@ -212,35 +388,67 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
     }
 }
 
-fn start_run(
-    args: &StartArgs,
+pub struct PreparedRun {
+    pub run_id: String,
+    pub run_dir: PathBuf,
+    pub workdir: PathBuf,
+    pub locked: Vec<Locked>,
+    pub mount_mode: config::MountMode,
+    pub menu_tokens: u64,
+    pub without_tokens: u64,
+    pub without_skills: usize,
+}
+
+pub fn prepare_run(
     cfg: &Config,
-    adapter: &dyn Adapter,
+    adapter_name: &str,
+    task: &str,
+    pins: &[String],
+    libraries: &[PathBuf],
+    harness_argv: &[String],
+) -> Result<PreparedRun> {
+    let locked = resolve::resolve(pins, cfg, libraries)?;
+    let run_id = run::new_run_id()?;
+    let run_dir = cfg.runs_dir.join(&run_id);
+    let prepared = mount_run(cfg, adapter_name, task, &locked, &run_id, &run_dir, harness_argv);
+    match prepared {
+        Ok(prepared) => Ok(prepared),
+        Err(error) => {
+            if run_dir.exists() {
+                let _ = std::fs::remove_dir_all(&run_dir);
+            }
+            Err(error)
+        }
+    }
+}
+
+fn mount_run(
+    cfg: &Config,
+    adapter_name: &str,
+    task: &str,
+    locked: &[Locked],
     run_id: &str,
     run_dir: &Path,
     harness_argv: &[String],
-    locked: &[Locked],
-    signals: &mut Signals,
-) -> Result<ExitCode> {
-    let adapter_name = adapter.name();
+) -> Result<PreparedRun> {
     let workdir = run_dir.join("workdir");
-    let workdir = workdir.as_path();
     std::fs::create_dir_all(run_dir)
         .with_context(|| format!("failed to create run dir {}", run_dir.display()))?;
     let skill_names: Vec<String> = locked.iter().map(|s| s.name.clone()).collect();
     let manifest = run::build_manifest(
         run_id,
-        args.task.as_deref().unwrap_or(""),
+        task,
         adapter_name,
         harness_argv,
         cfg.max_menu_tokens,
         &skill_names,
     );
     run::write_manifest(run_dir, &manifest)?;
-    let mount_mode = mount::mount(locked, workdir, cfg.mount_mode)?;
-    let lock = run::build_lock(run_id, mount_mode.as_str(), workdir, locked);
+    let mount_mode = mount::mount(locked, &workdir, cfg.mount_mode)?;
+    let lock = run::build_lock(run_id, mount_mode.as_str(), &workdir, locked);
     run::write_lock(run_dir, &lock)?;
-    let (without_tokens, without_skills) = adapter::union_menu(adapter, cfg);
+    let adapter = adapter::resolve_adapter(adapter_name)?;
+    let (without_tokens, without_skills) = adapter::union_menu(adapter.as_ref(), cfg);
     let menu_tokens: u64 = locked.iter().map(|s| s.description_tokens).sum();
     run::append_audit(
         run_dir,
@@ -255,6 +463,40 @@ fn start_run(
         run_id,
         json!({"event": "mounted", "mode": mount_mode.as_str(), "workdir": workdir}),
     )?;
+    Ok(PreparedRun {
+        run_id: run_id.to_string(),
+        run_dir: run_dir.to_path_buf(),
+        workdir,
+        locked: locked.to_vec(),
+        mount_mode,
+        menu_tokens,
+        without_tokens,
+        without_skills: without_skills.len(),
+    })
+}
+
+fn start_run(
+    args: &StartArgs,
+    cfg: &Config,
+    adapter: &dyn Adapter,
+    prepared: PreparedRun,
+    harness_argv: &[String],
+    signals: &mut Signals,
+) -> Result<ExitCode> {
+    let adapter_name = adapter.name();
+    let PreparedRun {
+        run_id,
+        run_dir,
+        workdir,
+        locked,
+        mount_mode,
+        menu_tokens,
+        without_tokens,
+        without_skills,
+    } = prepared;
+    let run_dir = run_dir.as_path();
+    let workdir = workdir.as_path();
+    let skill_names: Vec<String> = locked.iter().map(|s| s.name.clone()).collect();
 
     if let Some(signal) = signals.pending().next() {
         let _ = std::fs::remove_dir_all(run_dir);
@@ -281,10 +523,10 @@ fn start_run(
         println!("workdir        {}", workdir.display());
         println!("skills         {}", pins.join("  "));
         println!("menu_tokens    this run: {menu_tokens}");
-        if without_skills.is_empty() {
+        if without_skills == 0 {
             println!("without        {without_tokens}  (no skills found in {adapter_name} skill dirs)");
         } else {
-            println!("without        ~{without_tokens}  ({} skills on {adapter_name} global+project)", without_skills.len());
+            println!("without        ~{without_tokens}  ({without_skills} skills on {adapter_name} global+project)");
         }
         if adapter_name == "none" {
             println!("isolation      adapter none — mounted, not spawned");
@@ -309,7 +551,7 @@ fn start_run(
 
     run::append_audit(
         run_dir,
-        run_id,
+        &run_id,
         json!({"event": "spawn", "adapter": adapter_name, "argv": argv}),
     )?;
     let mut child = Command::new(&argv[0])
@@ -522,4 +764,47 @@ fn cmd_adapters(explain: bool) -> Result<ExitCode> {
         bail!("{reason}");
     }
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tui_tests {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[cfg(not(feature = "tui-doctor"))]
+    #[test]
+    fn doctor_and_preview_fail_closed_without_tui_doctor() {
+        let error = cmd_tui(TuiScreen::Doctor {
+            adapter: None,
+            json: true,
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("this build has no TUI screens"), "{error}");
+        let error = cmd_tui(TuiScreen::Preview {
+            skills: vec![],
+            libraries: vec![],
+            adapter: None,
+            json: true,
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("this build has no TUI screens"), "{error}");
+    }
+
+    #[cfg(not(feature = "tui-menu"))]
+    #[test]
+    fn picker_and_policy_fail_closed_without_tui_menu() {
+        let error = cmd_tui(TuiScreen::Picker {
+            libraries: vec![],
+            json: true,
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("this build has no TUI screens"), "{error}");
+        let error = cmd_tui(TuiScreen::Policy { json: true })
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("this build has no TUI screens"), "{error}");
+    }
 }

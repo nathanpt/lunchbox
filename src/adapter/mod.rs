@@ -103,6 +103,53 @@ pub fn union_menu(adapter: &dyn Adapter, cfg: &Config) -> (u64, Vec<FoundDirSkil
     union_from(&scan_dirs(adapter, cfg))
 }
 
+pub struct DoctorReport {
+    pub adapter: String,
+    pub adapter_version: Option<String>,
+    pub dirs: Vec<DirReport>,
+    pub menu_tokens: u64,
+    pub union: Vec<FoundDirSkill>,
+}
+
+pub fn doctor_report(adapter: &dyn Adapter, cfg: &Config) -> Result<DoctorReport> {
+    let adapter_version = adapter.detect()?;
+    let dirs = scan_dirs(adapter, cfg);
+    let (menu_tokens, union) = union_from(&dirs);
+    Ok(DoctorReport {
+        adapter: adapter.name().to_string(),
+        adapter_version,
+        dirs,
+        menu_tokens,
+        union,
+    })
+}
+
+impl DoctorReport {
+    pub fn fattest(&self) -> Vec<FoundDirSkill> {
+        let mut fattest = self.union.clone();
+        fattest.sort_by(|a, b| b.tokens.cmp(&a.tokens).then(a.name.cmp(&b.name)));
+        fattest.truncate(3);
+        fattest
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        let fattest = self.fattest();
+        let duplicates = duplicates(&self.union);
+        serde_json::json!({
+            "adapter": self.adapter,
+            "adapter_version": self.adapter_version,
+            "skill_dirs": self.dirs.iter().map(|r| serde_json::json!({
+                "dir": r.dir,
+                "exists": r.exists,
+                "skills": r.skills.len(),
+            })).collect::<Vec<_>>(),
+            "menu_tokens": self.menu_tokens,
+            "fattest": fattest.iter().map(|s| serde_json::json!({"name": s.name, "tokens": s.tokens})).collect::<Vec<_>>(),
+            "duplicates": duplicates.iter().map(|group| group.iter().map(|s| s.name.clone()).collect::<Vec<_>>()).collect::<Vec<_>>(),
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FoundDirSkill {
     pub name: String,

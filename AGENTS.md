@@ -11,9 +11,10 @@ sees only the locked Skills for that job. `docs/design-docs/DESIGN.md` is
 the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
-- Current phase: Phase 1 implemented — core MVP + Pi Path A adapter
-  (features 001, 002, 007 passing). TUI screens, Omp adapter, and Path B
-  run-local agents are later phases.
+- Current phase: Phase 1 + TUI milestone implemented — core MVP, Pi
+  Path A adapter, and the four TUI screens (features 001–007 passing).
+  Remaining for v1: feature-008 exit-bar human walkthrough, Omp
+  adapter, and Path B run-local agents.
 - Language/runtime: Rust, unconditional —
   `docs/decisions/0001-rust-unconditional.md` (ADR-0001).
 

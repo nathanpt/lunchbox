@@ -4,20 +4,30 @@ version = "0.1.0"
 edition = "2024"
 description = "Run-scoped skill runtime: mount a sealed per-run Skill set, hand it to a worker, always unmount."
 
+[features]
+default = ["tui-doctor", "tui-menu"]
+tui-doctor = ["dep:ratatui", "dep:crossterm", "dep:color-eyre"]
+tui-menu = ["dep:ratatui", "dep:crossterm", "dep:color-eyre", "dep:toml_edit"]
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+color-eyre = { version = "0.6", optional = true }
+crossterm = { version = "0.29", optional = true }
 fs4 = "0.13"
 hex = "0.4"
+ratatui = { version = "0.30", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 signal-hook = "0.3"
 time = { version = "0.3", features = ["formatting", "macros"] }
 toml = "0.9"
+toml_edit = { version = "0.23", optional = true }
 
 [dev-dependencies]
 assert_cmd = "2"
+insta = "1"
 predicates = "3"
 tempfile = "3"
 parking_lot = "0.12"

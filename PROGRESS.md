@@ -1,19 +1,41 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-06 (Phase 1 complete)
+Last updated: 2026-09-06 (TUI milestone complete)
 
 ## Current repository state
 
-Phase 1 implemented: core MVP + Pi Path A adapter. Rust CLI
-(`src/main.rs` + `config`/`library`/`hash`/`resolve`/`mount`/`tokens`/`run`/
-`adapter{,/none,/pi}` modules), `testdata/skills` demo pantry, 67 unit
-tests + 15 integration tests + 15 integration tests, all green. Features 001, 002, 007 pass.
-Branch `main`; commits: foundation `c14f6f9`, Phase 1 `05744ba`; tree clean.
+Phase 1 + TUI milestone implemented: core CLI + Pi Path A adapter
+(features 001, 002, 007) and the four v1 TUI screens behind cargo
+features — doctor, token-cost preview, skill picker, policy review
+(features 003–006), each with a `--json` twin and headless snapshot
+tests. `src/tui/` (terminal, snap, doctor, preview, picker, policy) with
+a state/render/handle_event split; `tui` subcommand parses in every
+build and fails closed without the features. Default features include
+both TUI features; `--no-default-features` ships the CLI-only binary.
+82 unit + 21 integration tests green in both configurations. Features
+001–007 pass. Branch `main`; tree clean after each phase commit.
 
-Not yet implemented (per DESIGN §22/§23): TUI milestone (features 003–006,
-Ratatui behind cargo features), Omp Path A adapter (DESIGN §23 step 10),
-Path B run-local agents (DESIGN §23 step 11), `--from` multi-worker
-manifests, scan-command hook, `skills/lunchbox/` driver Skill.
+Not yet implemented (per DESIGN §22/§23): v1 exit bar human walkthrough
+(feature-008), Omp Path A adapter, Path B run-local agents, `--from`
+multi-worker manifests, scan-command hook, `skills/lunchbox/` driver
+Skill.
+
+## TUI milestone verification (2026-09-06, this machine)
+
+Exec-plan: `docs/exec-plans/completed/tui-milestone.md`; decisions in
+ADR-0002 (`docs/decisions/0002-tui-dependencies.md`).
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 82 unit + 21 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 69 unit + 21 integration, 0 failed, 0 warnings |
+| Fail-closed TUI | `cargo run --no-default-features -- tui doctor` | non-zero, `this build has no TUI screens; rebuild with default features or --features tui-doctor,tui-menu (…)` (unit-tested per screen in `src/main.rs::tui_tests`) |
+| feature-003 doctor twin | `HOME=<fake> … tui doctor --json` vs `doctor --json` | byte-identical (integration test `tui_doctor_json_twin_matches_doctor_json`; snapshot `doctor_screen_two_skills`) |
+| feature-004 preview twin | `HOME=<fake> … tui preview --json --skill demo-review --skill demo-scan` | `menu_tokens 27`, `without_menu_tokens 27`, `over_budget false`; single skill → 14 (parity unit test + integration test) |
+| feature-005 picker | state-machine test `picker_start_mounts_and_finish_unmounts` + snapshot | exactly one run dir; workdir = exactly the two packages; `f` → workdir gone, `result.json` `unmounted: true`; quit implies finish (no leaked mount); pty smoke select→s→f→q exit 0 |
+| feature-006 policy | unit `add_deny_on_project_layer_preserves_format` + integration `feature_006_policy_edit_persists_to_project_layer_and_denies` | project layer gains `deny = ["demo-scan"]` with comments/keys intact; global layer byte-identical; `start --skill demo-scan` → `denied by policy`; pty smoke wrote the entry through the real screen |
+| Doctor refactor parity | golden capture before/after `DoctorReport` extraction | human + `--json` stdout byte-identical |
+| `prepare_run` refactor | full suite (pins `start --json` + audit contents) | green, no behavior change |
 
 ## Phase 1 verification (2026-09-06, this machine)
 
@@ -86,7 +108,8 @@ None in flight.
 
 ## Next useful move
 
-DESIGN §23 step 7 — the TUI milestone (features 003–006): four Ratatui
-screens behind cargo features (`tui-menu`, `tui-doctor`), each with a
-`--json` twin and snapshot tests. Highest-priority incomplete features in
-`docs/feature-list.json` are now 003/004.
+Feature-008 (v1 exit bar): the scripted MVP CLI loop re-verified, then
+the human walkthrough of all four TUI screens against real state —
+doctor on real dirs, picker → start → finish, policy edit persisting to
+the right layer — recorded here with date. After the exit bar: Omp
+Path A adapter (DESIGN §23 step 10), then Path B run-local agents.

@@ -1,3 +1,5 @@
+#[cfg(feature = "tui-menu")]
+use anyhow::bail;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -71,18 +73,81 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
-struct Layer {
-    library_paths: Option<Vec<PathBuf>>,
-    default_adapter: Option<String>,
-    mount_mode: Option<MountMode>,
-    scan_command: Option<String>,
-    allow: Option<Vec<String>>,
-    deny: Option<Vec<String>>,
-    max_menu_tokens: Option<u64>,
-    fail_on_budget: Option<bool>,
-    runs_dir: Option<PathBuf>,
+pub struct Layer {
+    pub library_paths: Option<Vec<PathBuf>>,
+    pub default_adapter: Option<String>,
+    pub mount_mode: Option<MountMode>,
+    pub scan_command: Option<String>,
+    pub allow: Option<Vec<String>>,
+    pub deny: Option<Vec<String>>,
+    pub max_menu_tokens: Option<u64>,
+    pub fail_on_budget: Option<bool>,
+    pub runs_dir: Option<PathBuf>,
+}
+
+#[cfg(feature = "tui-menu")]
+pub struct LayerReport {
+    pub path: PathBuf,
+    pub exists: bool,
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+}
+
+pub fn global_path() -> PathBuf {
+    match env::var_os("HOME") {
+        Some(home) => PathBuf::from(home).join(".lunchbox").join("config.toml"),
+        None => PathBuf::from(".lunchbox").join("config.toml"),
+    }
+}
+
+pub fn project_path() -> PathBuf {
+    PathBuf::from("lunchbox.toml")
+}
+#[cfg(feature = "tui-menu")]
+pub fn layer_report(path: &Path) -> Result<LayerReport> {
+    let layer = read_layer(path)?;
+    Ok(LayerReport {
+        allow: layer.allow.unwrap_or_default(),
+        deny: layer.deny.unwrap_or_default(),
+        exists: path.exists(),
+        path: path.to_path_buf(),
+    })
+}
+
+#[cfg(feature = "tui-menu")]
+pub fn append_layer_entry(path: &Path, list: &str, entry: &str) -> Result<()> {
+    if list != "allow" && list != "deny" {
+        bail!("unknown list '{list}' (expected allow or deny)");
+    }
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e).context(format!("failed to read {}", path.display())),
+    };
+    let mut document: toml_edit::DocumentMut = text
+        .parse()
+        .with_context(|| format!("failed to parse config at {}", path.display()))?;
+    let item = document
+        .as_table_mut()
+        .entry(list)
+        .or_insert_with(|| toml_edit::Item::Value(toml_edit::Value::Array(Default::default())));
+    let entries = item
+        .as_array_mut()
+        .with_context(|| format!("'{list}' in {} is not a list", path.display()))?;
+    if entries.iter().any(|value| value.as_str() == Some(entry)) {
+        return Ok(());
+    }
+    entries.push(entry);
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+    fs::write(path, document.to_string())
+        .with_context(|| format!("failed to write {}", path.display()))
 }
 
 impl Config {
@@ -90,8 +155,8 @@ impl Config {
         let home = env::var_os("HOME")
             .map(PathBuf::from)
             .context("HOME is not set; cannot locate the global lunchbox config")?;
-        let global = read_layer(&home.join(".lunchbox").join("config.toml"))?;
-        let project = read_layer(Path::new("lunchbox.toml"))?;
+        let global = read_layer(&global_path())?;
+        let project = read_layer(&project_path())?;
         let mut config = merge(global, project);
         config.expand_paths(&home);
         Ok(config)
@@ -122,7 +187,8 @@ impl Config {
     }
 }
 
-fn read_layer(path: &Path) -> Result<Layer> {
+
+pub fn read_layer(path: &Path) -> Result<Layer> {
     match fs::read_to_string(path) {
         Ok(text) => toml::from_str(&text)
             .with_context(|| format!("failed to parse config at {}", path.display())),
