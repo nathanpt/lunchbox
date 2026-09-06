@@ -1,0 +1,111 @@
+{
+  "features": [
+    {
+      "id": "feature-001",
+      "category": "functional",
+      "description": "MVP mount/unmount loop: start with explicit skills and adapter none mounts exactly those packages; finish removes the workdir and records unmounted=true",
+      "steps": [
+        "Run: lunchbox start --library testdata/skills --skill demo-review --skill demo-scan --adapter none",
+        "Verify the workdir contains exactly demo-review and demo-scan",
+        "Run: lunchbox finish",
+        "Verify the workdir is gone and result.json has unmounted=true"
+      ],
+      "passes": false,
+      "priority": 1,
+      "dependencies": []
+    },
+    {
+      "id": "feature-002",
+      "category": "functional",
+      "description": "doctor reports adapter, skill dirs, counts, menu_tokens estimate, and duplicates read-only, without mounting anything",
+      "steps": [
+        "Run: lunchbox doctor against a configured fake tree",
+        "Verify skill count and estimated menu_tokens match the tree",
+        "Verify no run dir or workdir was created"
+      ],
+      "passes": false,
+      "priority": 2,
+      "dependencies": []
+    },
+    {
+      "id": "feature-003",
+      "category": "functional",
+      "description": "TUI doctor screen: navigable doctor report behind the tui cargo feature, with a --json twin and a passing snapshot test",
+      "steps": [
+        "Launch the doctor TUI against a fake tree with the tui feature enabled",
+        "Verify displayed counts/tokens equal the doctor --json output for the same tree",
+        "Verify the TestBackend snapshot test passes in CI without a terminal"
+      ],
+      "passes": false,
+      "priority": 3,
+      "dependencies": ["feature-002"]
+    },
+    {
+      "id": "feature-004",
+      "category": "functional",
+      "description": "TUI token-cost preview: menu_tokens for a candidate pack vs without-Lunchbox, with --json twin and snapshot test",
+      "steps": [
+        "Open the preview screen for a candidate pack of two demo skills",
+        "Verify the shown run estimate equals CLI estimation for that pack and the without-Lunchbox figure equals doctor's",
+        "Verify the snapshot test passes headless"
+      ],
+      "passes": false,
+      "priority": 3,
+      "dependencies": ["feature-002"]
+    },
+    {
+      "id": "feature-005",
+      "category": "functional",
+      "description": "TUI skill picker: browse the library, compose a pack, start a real run, finish it — all from the screen",
+      "steps": [
+        "Open the picker against testdata/skills",
+        "Select demo-review and demo-scan and start the run from the screen",
+        "Verify the run mounted exactly the selected skills",
+        "Finish the run from the screen and verify the workdir is gone"
+      ],
+      "passes": false,
+      "priority": 3,
+      "dependencies": ["feature-001"]
+    },
+    {
+      "id": "feature-006",
+      "category": "functional",
+      "description": "TUI policy review: view allow/deny per config layer and edit one; the edit persists to exactly that layer",
+      "steps": [
+        "Open policy review in a project that has both global and project layers",
+        "Add a deny entry from the screen while viewing the project layer",
+        "Verify ./lunchbox.toml contains the entry and ~/.lunchbox/config.toml is unchanged",
+        "Verify the run resolver now denies that skill name"
+      ],
+      "passes": false,
+      "priority": 4,
+      "dependencies": []
+    },
+    {
+      "id": "feature-007",
+      "category": "functional",
+      "description": "Pi Path A isolation: start spawns pi with --no-skills and --skill <workdir> present in argv; selftest guards flag drift",
+      "steps": [
+        "Run: lunchbox start --library testdata/skills --skill demo-review --adapter pi --wait -- -- pi --list-models",
+        "Verify the audit spawn event shows --no-skills and --skill <workdir> in argv",
+        "Verify the adapter selftest passes (skipped cleanly if pi is absent)"
+      ],
+      "passes": false,
+      "priority": 5,
+      "dependencies": ["feature-001"]
+    },
+    {
+      "id": "feature-008",
+      "category": "release",
+      "description": "v1 exit bar: scripted MVP CLI loop plus a human walkthrough of all four TUI screens against real state",
+      "steps": [
+        "Verify feature-001 through feature-007 all pass",
+        "Perform the human walkthrough: doctor on real dirs, picker → start → finish, policy edit persisting to the right layer",
+        "Record walkthrough result and date in PROGRESS.md"
+      ],
+      "passes": false,
+      "priority": 6,
+      "dependencies": ["feature-001", "feature-002", "feature-003", "feature-004", "feature-005", "feature-006", "feature-007"]
+    }
+  ]
+}
