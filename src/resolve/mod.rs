@@ -1,0 +1,355 @@
+use crate::config::Config;
+use crate::hash::hash_tree;
+use crate::library::{FoundSkill, find_in_root};
+use crate::tokens::estimate;
+use anyhow::{Result, bail};
+use std::path::PathBuf;
+
+#[derive(Debug, Clone)]
+pub struct Locked {
+    pub name: String,
+    pub source: PathBuf,
+    pub hash: String,
+    pub description_tokens: u64,
+}
+
+#[derive(Debug)]
+pub struct Pin {
+    pub name: String,
+    pub pinned_hash: Option<String>,
+}
+
+pub fn parse_pin(pin: &str) -> Result<Pin> {
+    match pin.split_once('@') {
+        None => Ok(Pin {
+            name: pin.to_string(),
+            pinned_hash: None,
+        }),
+        Some((name, tail)) => {
+            let digest = tail.strip_prefix("sha256:").unwrap_or_default();
+            let valid = digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_lowercase_digit());
+            if valid {
+                Ok(Pin {
+                    name: name.to_string(),
+                    pinned_hash: Some(format!("sha256:{digest}")),
+                })
+            } else {
+                bail!("tag pins are not supported yet; pin by hash (got '{pin}')")
+            }
+        }
+    }
+}
+
+trait AsciiLowerHex {
+    fn is_ascii_lowercase_digit(self) -> bool;
+}
+
+impl AsciiLowerHex for u8 {
+    fn is_ascii_lowercase_digit(self) -> bool {
+        self.is_ascii_digit() || (b'a'..=b'f').contains(&self)
+    }
+}
+
+pub fn resolve(pins: &[String], cfg: &Config, roots_extra: &[PathBuf]) -> Result<Vec<Locked>> {
+    if !cfg.scan_command.is_empty() {
+        bail!("scan_command is configured but not supported in this build");
+    }
+    let roots = cfg.search_roots(roots_extra);
+    let mut locked: Vec<Locked> = Vec::new();
+    for pin in pins {
+        let pin = parse_pin(pin)?;
+        let found = expand_pin(&pin, &roots)?;
+        if cfg.deny.iter().any(|d| d == &found.name) {
+            bail!("skill '{}' is denied by policy", found.name);
+        }
+        if !cfg.allow.is_empty() && !cfg.allow.iter().any(|a| a == &found.name) {
+            bail!(
+                "skill '{}' is not on the allow list (allow = [{}])",
+                found.name,
+                cfg.allow.join(", ")
+            );
+        }
+        let meta = crate::library::read_skill_meta(&found.source)?
+            .ok_or_else(|| anyhow::anyhow!("skill '{}' is missing SKILL.md", found.name))?;
+        let tokens = estimate(&meta.name, &meta.description);
+        if let Some(existing) = locked.iter().find(|l| l.name == found.name) {
+            if existing.hash != found.hash {
+                bail!(
+                    "skill '{}' pinned twice with conflicting hashes ({} vs {})",
+                    found.name,
+                    existing.hash,
+                    found.hash
+                );
+            }
+            continue;
+        }
+        locked.push(Locked {
+            name: found.name,
+            source: found.source,
+            hash: found.hash,
+            description_tokens: tokens,
+        });
+    }
+    enforce_budget(locked.iter().map(|l| l.description_tokens).sum(), cfg)?;
+    Ok(locked)
+}
+
+fn expand_pin(pin: &Pin, roots: &[PathBuf]) -> Result<Expanded> {
+    for root in roots {
+        let matches = find_in_root(root, &pin.name)?;
+        match matches.len() {
+            0 => continue,
+            1 => {
+                let found = matches.into_iter().next().unwrap();
+                let hash = hash_tree(&found.source)?;
+                if let Some(pinned) = &pin.pinned_hash {
+                    if pinned != &hash {
+                        bail!(
+                            "hash mismatch for skill '{}': pinned {}, found {}",
+                            pin.name,
+                            pinned,
+                            hash
+                        );
+                    }
+                }
+                return Ok(Expanded {
+                    name: found.name,
+                    source: found.source,
+                    hash,
+                });
+            }
+            _ => {
+                let Some(pinned) = &pin.pinned_hash else {
+                    bail!(
+                        "two packages with the name '{}' in library root {}; pin by hash to disambiguate",
+                        pin.name,
+                        root.display()
+                    );
+                };
+                for found in matches {
+                    let hash = hash_tree(&found.source)?;
+                    if &hash == pinned {
+                        return Ok(Expanded {
+                            name: found.name,
+                            source: found.source,
+                            hash,
+                        });
+                    }
+                }
+                bail!(
+                    "no package matching '{}' found in library root {}",
+                    format!("{}@{}", pin.name, pinned),
+                    root.display()
+                );
+            }
+        }
+    }
+    let searched = roots
+        .iter()
+        .map(|r| r.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    bail!(
+        "skill '{}' not found in any library root (searched: {})",
+        pin.name,
+        searched
+    );
+}
+
+struct Expanded {
+    name: String,
+    source: PathBuf,
+    hash: String,
+}
+
+impl From<Expanded> for FoundSkill {
+    fn from(expanded: Expanded) -> FoundSkill {
+        FoundSkill {
+            name: expanded.name,
+            source: expanded.source,
+        }
+    }
+}
+
+fn enforce_budget(menu_tokens: u64, cfg: &Config) -> anyhow::Result<()> {
+    if menu_tokens > cfg.max_menu_tokens {
+        if cfg.fail_on_budget {
+            bail!(
+                "menu_tokens {} exceeds max_menu_tokens {} (fail_on_budget = true)",
+                menu_tokens,
+                cfg.max_menu_tokens
+            );
+        }
+        eprintln!(
+            "warning: menu_tokens {} exceeds max_menu_tokens {} (fail_on_budget = false)",
+            menu_tokens, cfg.max_menu_tokens
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::MountMode;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn pantry() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("demo-review")).unwrap();
+        fs::write(
+            dir.path().join("demo-review").join("SKILL.md"),
+            "---\nname: demo-review\ndescription: Review staged changes for defects and risks.\n---\nbody\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    fn config_with_root(root: &PathBuf) -> Config {
+        Config {
+            library_paths: vec![root.clone()],
+            ..Config::default()
+        }
+    }
+
+    fn pins(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn resolves_plain_pin_with_hash() {
+        let dir = pantry();
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let locked = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap();
+        assert_eq!(locked.len(), 1);
+        assert_eq!(locked[0].name, "demo-review");
+        assert!(locked[0].hash.starts_with("sha256:"));
+        assert_eq!(locked[0].description_tokens, 14);
+    }
+
+    #[test]
+    fn resolves_hash_pin_with_matching_hash() {
+        let dir = pantry();
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let hash = hash_tree(&dir.path().join("demo-review")).unwrap();
+        let pin = format!("demo-review@{hash}");
+        let locked = resolve(&[pin], &cfg, &[]).unwrap();
+        assert_eq!(locked[0].hash, hash);
+    }
+
+    #[test]
+    fn hash_mismatch_fails() {
+        let dir = pantry();
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let bogus = "sha256:".to_string() + &"0".repeat(64);
+        let err = resolve(&[format!("demo-review@{bogus}")], &cfg, &[])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("hash mismatch"), "{err}");
+    }
+
+    #[test]
+    fn missing_name_lists_every_root() {
+        let dir = pantry();
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let err = resolve(&pins(&["nope"]), &cfg, &[]).unwrap_err().to_string();
+        assert!(err.contains("not found"), "{err}");
+        assert!(err.contains(&dir.path().display().to_string()), "{err}");
+    }
+
+    #[test]
+    fn deny_gate_names_the_skill() {
+        let dir = pantry();
+        let mut cfg = config_with_root(&dir.path().to_path_buf());
+        cfg.deny = vec!["demo-review".to_string()];
+        let err = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap_err().to_string();
+        assert!(err.contains("denied"), "{err}");
+        assert!(err.contains("demo-review"), "{err}");
+    }
+
+    #[test]
+    fn allow_gate_rejects_unlisted() {
+        let dir = pantry();
+        let mut cfg = config_with_root(&dir.path().to_path_buf());
+        cfg.allow = vec!["something-else".to_string()];
+        let err = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap_err().to_string();
+        assert!(err.contains("allow"), "{err}");
+    }
+
+    #[test]
+    fn allow_gate_passes_listed() {
+        let dir = pantry();
+        let mut cfg = config_with_root(&dir.path().to_path_buf());
+        cfg.allow = vec!["demo-review".to_string()];
+        assert!(resolve(&pins(&["demo-review"]), &cfg, &[]).is_ok());
+    }
+
+    #[test]
+    fn tag_pin_errors() {
+        let err = parse_pin("demo-review@v1.2.0").unwrap_err().to_string();
+        assert_eq!(err, "tag pins are not supported yet; pin by hash (got 'demo-review@v1.2.0')");
+    }
+
+    #[test]
+    fn malformed_hash_pin_is_rejected() {
+        assert!(parse_pin("x@sha256:abc").is_err());
+        assert!(parse_pin("x@sha256:ABCDEF").is_err());
+        assert!(parse_pin("x").is_ok());
+    }
+
+    #[test]
+    fn scan_command_fails_closed() {
+        let dir = pantry();
+        let mut cfg = config_with_root(&dir.path().to_path_buf());
+        cfg.scan_command = "some-scanner".to_string();
+        let err = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap_err().to_string();
+        assert!(err.contains("scan_command is configured but not supported"), "{err}");
+    }
+
+    #[test]
+    fn duplicate_pins_dedupe_same_hash() {
+        let dir = pantry();
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let locked = resolve(&pins(&["demo-review", "demo-review"]), &cfg, &[]).unwrap();
+        assert_eq!(locked.len(), 1);
+    }
+
+    #[test]
+    fn budget_hard_fail() {
+        let dir = pantry();
+        let mut cfg = config_with_root(&dir.path().to_path_buf());
+        cfg.max_menu_tokens = 10;
+        cfg.fail_on_budget = true;
+        let err = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap_err().to_string();
+        assert!(err.contains("menu_tokens"), "{err}");
+    }
+
+    #[test]
+    fn budget_soft_warn_still_resolves() {
+        let dir = pantry();
+        let mut cfg = config_with_root(&dir.path().to_path_buf());
+        cfg.max_menu_tokens = 10;
+        cfg.fail_on_budget = false;
+        assert!(resolve(&pins(&["demo-review"]), &cfg, &[]).is_ok());
+    }
+
+    #[test]
+    fn extra_roots_are_searched_first() {
+        let dir = pantry();
+        let other = TempDir::new().unwrap();
+        fs::create_dir_all(other.path().join("demo-review")).unwrap();
+        fs::write(
+            other.path().join("demo-review").join("SKILL.md"),
+            "---\nname: demo-review\ndescription: Other copy.\n---\n",
+        )
+        .unwrap();
+        let cfg = Config {
+            library_paths: vec![dir.path().to_path_buf()],
+            mount_mode: MountMode::Symlink,
+            ..Config::default()
+        };
+        let locked = resolve(&pins(&["demo-review"]), &cfg, &[other.path().to_path_buf()]).unwrap();
+        assert_eq!(locked[0].description_tokens, estimate("demo-review", "Other copy."));
+    }
+}

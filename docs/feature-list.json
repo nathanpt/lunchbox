@@ -10,7 +10,7 @@
         "Run: lunchbox finish",
         "Verify the workdir is gone and result.json has unmounted=true"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 1,
       "dependencies": []
     },
@@ -23,7 +23,7 @@
         "Verify skill count and estimated menu_tokens match the tree",
         "Verify no run dir or workdir was created"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 2,
       "dependencies": []
     },
@@ -38,7 +38,9 @@
       ],
       "passes": false,
       "priority": 3,
-      "dependencies": ["feature-002"]
+      "dependencies": [
+        "feature-002"
+      ]
     },
     {
       "id": "feature-004",
@@ -51,12 +53,14 @@
       ],
       "passes": false,
       "priority": 3,
-      "dependencies": ["feature-002"]
+      "dependencies": [
+        "feature-002"
+      ]
     },
     {
       "id": "feature-005",
       "category": "functional",
-      "description": "TUI skill picker: browse the library, compose a pack, start a real run, finish it — all from the screen",
+      "description": "TUI skill picker: browse the library, compose a pack, start a real run, finish it \u2014 all from the screen",
       "steps": [
         "Open the picker against testdata/skills",
         "Select demo-review and demo-scan and start the run from the screen",
@@ -65,7 +69,9 @@
       ],
       "passes": false,
       "priority": 3,
-      "dependencies": ["feature-001"]
+      "dependencies": [
+        "feature-001"
+      ]
     },
     {
       "id": "feature-006",
@@ -90,9 +96,11 @@
         "Verify the audit spawn event shows --no-skills and --skill <workdir> in argv",
         "Verify the adapter selftest passes (skipped cleanly if pi is absent)"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 5,
-      "dependencies": ["feature-001"]
+      "dependencies": [
+        "feature-001"
+      ]
     },
     {
       "id": "feature-008",
@@ -100,12 +108,20 @@
       "description": "v1 exit bar: scripted MVP CLI loop plus a human walkthrough of all four TUI screens against real state",
       "steps": [
         "Verify feature-001 through feature-007 all pass",
-        "Perform the human walkthrough: doctor on real dirs, picker → start → finish, policy edit persisting to the right layer",
+        "Perform the human walkthrough: doctor on real dirs, picker \u2192 start \u2192 finish, policy edit persisting to the right layer",
         "Record walkthrough result and date in PROGRESS.md"
       ],
       "passes": false,
       "priority": 6,
-      "dependencies": ["feature-001", "feature-002", "feature-003", "feature-004", "feature-005", "feature-006", "feature-007"]
+      "dependencies": [
+        "feature-001",
+        "feature-002",
+        "feature-003",
+        "feature-004",
+        "feature-005",
+        "feature-006",
+        "feature-007"
+      ]
     }
   ]
 }

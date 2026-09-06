@@ -18,3 +18,16 @@ edits that a user would not notice do not belong here.
   first-class v1 surface (four Ratatui screens), two-layer config, git-only
   install, v1 exit bar defined. ADR-0001 accepted: Rust, unconditional.
   Feature contract populated (8 features); foundation docs synced.
+
+### Added (Phase 1)
+
+- 2026-09-06 — Phase 1: core MVP + Pi Path A adapter. Two-layer config
+  (`~/.lunchbox/config.toml` + `./lunchbox.toml`, project-wins/deny-union/
+  allow-intersect/library-prepend), content-addressed Skill hashing,
+  library reader, fail-closed resolver (hash pins, deny/allow gates,
+  token budget), symlink/copy sealed workdir with always-unmount teardown
+  (`finish`/`abort`/`gc`, flock-guarded, idempotent), lifecycle CLI
+  (`start`/`status`/`finish`/`abort`/`gc`/`why`/`adapters`/`doctor`,
+  `--json` twins), `menu_tokens` estimates, Pi adapter spawning
+  `pi --no-skills --skill <workdir>/<skill>` with selftest-guarded flags,
+  and the `testdata/skills` demo pantry. Features 001, 002, 007 pass.

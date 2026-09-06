@@ -8,3 +8,4 @@ Thumbs.db
 # Rust (ADR-0001). Cargo.lock is committed: binary crate.
 /target
 **/*.rs.bk
+

@@ -11,7 +11,9 @@ sees only the locked Skills for that job. `docs/design-docs/DESIGN.md` is
 the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
-- Current phase: pre-implementation — design reviewed, no code yet.
+- Current phase: Phase 1 implemented — core MVP + Pi Path A adapter
+  (features 001, 002, 007 passing). TUI screens, Omp adapter, and Path B
+  run-local agents are later phases.
 - Language/runtime: Rust, unconditional —
   `docs/decisions/0001-rust-unconditional.md` (ADR-0001).
 
@@ -19,11 +21,9 @@ the source of intent; product narrative will live under
 
 | Task | Command | Notes |
 |---|---|---|
-| Setup | `cargo build` | goes live at DESIGN §23 step 1 |
+| Setup | `cargo build` | Rust ≥ 1.85 (edition 2024) |
 | Run | `cargo run -- <subcommand>` | subcommands per DESIGN §16 |
 | Checks | `cargo test` | must pass without Pi/Omp installed (DESIGN §21) |
-
-No source exists yet; these go live when the skeleton lands.
 
 ## Global hard constraints
 
