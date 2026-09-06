@@ -11,10 +11,9 @@ sees only the locked Skills for that job. `docs/design-docs/DESIGN.md` is
 the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
-- Current phase: v1 exit bar passed (features 001–008 all passing) —
-  core MVP, Pi Path A adapter, and the four TUI screens done. Remaining
-  for v1: the README (DESIGN §22/§25). After v1: Omp adapter and Path B
-  run-local agents. Work paused at the user's request; nothing started.
+- Current phase: v1 complete (features 001–010 all passing) — core MVP,
+  Pi + Omp Path A adapters, the four TUI screens, and the README
+  (DESIGN §22/§25). Next: Path B run-local agents (DESIGN §23 step 11).
 - Language/runtime: Rust, unconditional —
   `docs/decisions/0001-rust-unconditional.md` (ADR-0001).
 

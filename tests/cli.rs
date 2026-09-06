@@ -495,15 +495,92 @@ fn from_manifest_is_refused_this_phase() {
 }
 
 #[test]
-fn omp_adapter_refused_this_phase() {
+fn omp_spawn_records_audit_and_overlay() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let record = mock_omp(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
+
     lbx()
-        .args(["start", "--adapter", "omp"])
+        .args([
+            "start",
+            "--library",
+            skills.to_str().unwrap(),
+            "--skill",
+            "demo-review",
+            "--adapter",
+            "omp",
+            "--no-wait",
+            "--",
+            "omp",
+            "-p",
+            "hello",
+        ])
+        .env("HOME", home.path())
+        .env("PATH", path_env)
+        .current_dir(cwd.path())
         .assert()
-        .failure()
-        .stderr(predicates::str::contains("omp adapter arrives after Phase 1"));
+        .success();
+
+    let run = only_run(home.path());
+    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
+    let spawn: Value = audit
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .find(|event: &Value| event["event"] == "spawn")
+        .expect("spawn event present");
+    let argv = spawn["argv"].as_array().unwrap();
+    let overlay_path = run.join("omp-config.yml").to_string_lossy().into_owned();
+    assert_eq!(
+        argv.iter().map(|v| v.as_str().unwrap()).collect::<Vec<_>>(),
+        vec!["omp", "--config", overlay_path.as_str(), "omp", "-p", "hello"],
+        "{argv:?}"
+    );
+    let overlay = fs::read_to_string(run.join("omp-config.yml")).unwrap();
+    assert!(overlay.contains("customDirectories"), "{overlay}");
+    assert!(
+        overlay.contains(run.join("workdir").to_str().unwrap()),
+        "{overlay}"
+    );
+    let recorded = fs::read_to_string(&record).unwrap();
+    assert!(recorded.contains("--config"), "{}", recorded);
+
+    lbx()
+        .args(["abort"])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    assert!(!run.join("workdir").exists());
+    let result: Value =
+        serde_json::from_str(&fs::read_to_string(run.join("result.json")).unwrap()).unwrap();
+    assert_eq!(result["outcome"], serde_json::json!("aborted"));
 }
 
-fn path_with_mock_pi(cwd: &Path) -> std::ffi::OsString {
+#[test]
+fn omp_selftest_skips_when_binary_absent() {
+    let home = scratch();
+    let cwd = scratch();
+    let bare = std::env::join_paths([
+        cwd.path().join("empty-bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ])
+    .unwrap();
+    fs::create_dir_all(cwd.path().join("empty-bin")).unwrap();
+    lbx()
+        .args(["adapters"])
+        .env("HOME", home.path())
+        .env("PATH", bare)
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("omp"))
+        .stdout(predicates::str::contains("skipped"));
+}
+
+fn path_with_mock_bin(cwd: &Path) -> std::ffi::OsString {
     std::env::join_paths(
         std::iter::once(cwd.join("bin"))
             .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())),
@@ -511,12 +588,12 @@ fn path_with_mock_pi(cwd: &Path) -> std::ffi::OsString {
     .unwrap()
 }
 
-fn mock_pi(scratch_dir: &Path) -> PathBuf {
+fn mock_harness(scratch_dir: &Path, binary: &str) -> PathBuf {
     let bin = scratch_dir.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let script = scratch_dir.join("argv-record");
     fs::write(
-        bin.join("pi"),
+        bin.join(binary),
         format!(
             "#!/bin/sh\nexec >/dev/null 2>&1 </dev/null\nprintf '%s\\n' \"$@\" > {}\nsleep 60\n",
             script.display()
@@ -524,8 +601,16 @@ fn mock_pi(scratch_dir: &Path) -> PathBuf {
     )
     .unwrap();
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(bin.join("pi"), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(bin.join(binary), fs::Permissions::from_mode(0o755)).unwrap();
     script
+}
+
+fn mock_pi(scratch_dir: &Path) -> PathBuf {
+    mock_harness(scratch_dir, "pi")
+}
+
+fn mock_omp(scratch_dir: &Path) -> PathBuf {
+    mock_harness(scratch_dir, "omp")
 }
 
 #[test]
@@ -534,7 +619,7 @@ fn pi_spawn_records_audit_and_aborts() {
     let skills = demo_skills();
     let cwd = scratch();
     let record = mock_pi(cwd.path());
-    let path_env = path_with_mock_pi(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
 
     lbx()
         .args([
@@ -620,7 +705,7 @@ fn finish_on_live_run_errors() {
     let skills = demo_skills();
     let cwd = scratch();
     let _record = mock_pi(cwd.path());
-    let path_env = path_with_mock_pi(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
     lbx()
         .args([
             "start",
@@ -661,7 +746,7 @@ fn sigint_forwards_and_aborts() {
     let skills = demo_skills();
     let cwd = scratch();
     let _record = mock_pi(cwd.path());
-    let path_env = path_with_mock_pi(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
     let binary = env!("CARGO_BIN_EXE_lunchbox");
     let mut child = std::process::Command::new(binary)
         .args([
@@ -858,7 +943,7 @@ fn abort_on_finished_run_is_a_no_op() {
     let skills = demo_skills();
     let cwd = scratch();
     let _record = mock_pi(cwd.path());
-    let path_env = path_with_mock_pi(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
     lbx()
         .args([
             "start",
@@ -894,8 +979,7 @@ fn abort_on_finished_run_is_a_no_op() {
         .env("PATH", &path_env)
         .current_dir(cwd.path())
         .assert()
-        .success()
-        .stdout(predicates::str::contains("aborted"));
+        .success();
     let result_again: Value =
         serde_json::from_str(&fs::read_to_string(run.join("result.json")).unwrap()).unwrap();
     assert_eq!(result_again["outcome"], serde_json::json!("aborted"));

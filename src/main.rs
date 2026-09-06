@@ -529,10 +529,11 @@ fn start_run(
         } else {
             println!("without        ~{without_tokens}  ({without_skills} skills on {adapter_name} global+project)");
         }
-        if adapter_name == "none" {
-            println!("isolation      adapter none — mounted, not spawned");
-        } else {
-            println!("isolation      path A flags applied: --no-skills --skill <workdir>");
+        match adapter_name {
+            "none" => println!("isolation      adapter none — mounted, not spawned"),
+            "pi" => println!("isolation      path A flags applied: --no-skills --skill <workdir>"),
+            "omp" => println!("isolation      path A config overlay: --config <run>/omp-config.yml"),
+            _ => println!("isolation      path A"),
         }
         println!("unmount        run lunchbox finish {run_id}   (auto on --wait exit)");
     }
@@ -541,7 +542,7 @@ fn start_run(
         return Ok(ExitCode::SUCCESS);
     }
 
-    let argv = adapter.isolation_argv(workdir, &skill_names, harness_argv)?;
+    let argv = adapter.isolation_argv(run_dir, workdir, &skill_names, harness_argv)?;
     if args.dry_run {
         for token in &argv {
             println!("{}", shell_quote(token));
@@ -736,7 +737,7 @@ fn cmd_why(run_id: Option<&str>, json: bool) -> Result<ExitCode> {
 
 fn cmd_adapters(explain: bool) -> Result<ExitCode> {
     let mut failure = None;
-    for name in ["none", "pi"] {
+    for name in ["none", "pi", "omp"] {
         let adapter = adapter::resolve_adapter(name)?;
         let version = adapter.detect()?;
         let selftest = adapter.selftest()?;

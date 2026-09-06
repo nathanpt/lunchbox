@@ -122,6 +122,34 @@
         "feature-006",
         "feature-007"
       ]
+    },
+    {
+      "id": "feature-009",
+      "category": "release",
+      "description": "v1 README per DESIGN §25: one-liner, install, doctor/start/finish quick start, menu_tokens before/after, not-a-skill-manager note, TUI section",
+      "steps": [
+        "Every README command runs verbatim against a fresh clone with a temp HOME and the shown output matches",
+        "Install section names cargo install --locked --git (placeholder URL, no remote configured) and the from-a-clone path",
+        "README states it is not a skill manager and points --library at Kitter / Skills Manager / ~/.agents/skills"
+      ],
+      "passes": true,
+      "priority": 7,
+      "dependencies": []
+    },
+    {
+      "id": "feature-010",
+      "category": "functional",
+      "description": "Omp Path A: start --adapter omp spawns omp with discovery off and the run workdir as the only skill source — or refuses Path A explicitly if isolation cannot be verified (DESIGN §13)",
+      "steps": [
+        "adapters lists omp with version and a passing selftest where omp is installed, skipped cleanly where absent",
+        "start --adapter omp --dry-run prints the exact spawn argv including the per-run --config overlay whose content points skills.customDirectories at the workdir",
+        "A live spawn loads exactly the mounted skills (foreign pantry names absent), or the adapter refuses to spawn with an explicit error naming the probe result"
+      ],
+      "passes": true,
+      "priority": 8,
+      "dependencies": [
+        "feature-007"
+      ]
     }
   ]
 }

@@ -35,6 +35,7 @@ impl Adapter for PiAdapter {
 
     fn isolation_argv(
         &self,
+        _run_dir: &Path,
         workdir: &Path,
         skills: &[String],
         user_argv: &[String],

@@ -5,9 +5,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub mod none;
+pub mod omp;
 pub mod pi;
 
 pub use none::NoneAdapter;
+pub use omp::OmpAdapter;
 pub use pi::PiAdapter;
 
 pub trait Adapter {
@@ -19,6 +21,7 @@ pub trait Adapter {
 
     fn isolation_argv(
         &self,
+        run_dir: &Path,
         workdir: &Path,
         skills: &[String],
         user_argv: &[String],
@@ -45,8 +48,8 @@ pub fn resolve_adapter(name: &str) -> Result<Box<dyn Adapter>> {
     match name {
         "none" => Ok(Box::new(NoneAdapter)),
         "pi" => Ok(Box::new(PiAdapter)),
-        "omp" => bail!("omp adapter arrives after Phase 1"),
-        other => bail!("unknown adapter '{other}' (available: none, pi)"),
+        "omp" => Ok(Box::new(OmpAdapter)),
+        other => bail!("unknown adapter '{other}' (available: none, pi, omp)"),
     }
 }
 
@@ -237,15 +240,15 @@ mod tests {
     fn adapter_resolution() {
         assert_eq!(resolve_adapter("none").unwrap().name(), "none");
         assert_eq!(resolve_adapter("pi").unwrap().name(), "pi");
-        let omp = resolve_adapter("omp").err().map(|e| e.to_string()).unwrap();
-        assert_eq!(omp, "omp adapter arrives after Phase 1");
-        assert!(resolve_adapter("zzz").is_err());
+        assert_eq!(resolve_adapter("omp").unwrap().name(), "omp");
+        let unknown = resolve_adapter("zzz").err().map(|e| e.to_string()).unwrap();
+        assert_eq!(unknown, "unknown adapter 'zzz' (available: none, pi, omp)");
     }
 
     #[test]
     fn none_adapter_never_spawns() {
         let err = NoneAdapter
-            .isolation_argv(Path::new("/w"), &["a".to_string()], &[])
+            .isolation_argv(Path::new("/r"), Path::new("/w"), &["a".to_string()], &[])
             .unwrap_err()
             .to_string();
         assert!(err.contains("adapter none never spawns"), "{err}");
@@ -255,6 +258,7 @@ mod tests {
     fn pi_isolation_argv_is_exact() {
         let argv = PiAdapter
             .isolation_argv(
+                Path::new("/runs/lbx_x"),
                 Path::new("/runs/lbx_x/workdir"),
                 &["demo-review".to_string(), "demo-scan".to_string()],
                 &["pi".to_string(), "-p".to_string(), "hello".to_string()],
@@ -281,6 +285,7 @@ mod tests {
         let err = PiAdapter.write_run_agents(Path::new("/tmp/x")).unwrap_err().to_string();
         assert_eq!(err, "Path B not implemented in this build");
         assert!(NoneAdapter.write_run_agents(Path::new("/tmp/x")).is_err());
+        assert!(OmpAdapter.write_run_agents(Path::new("/tmp/x")).is_err());
     }
 
     #[test]

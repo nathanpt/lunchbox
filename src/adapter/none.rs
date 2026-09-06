@@ -20,6 +20,7 @@ impl Adapter for NoneAdapter {
 
     fn isolation_argv(
         &self,
+        _run_dir: &Path,
         _workdir: &Path,
         _skills: &[String],
         _user_argv: &[String],

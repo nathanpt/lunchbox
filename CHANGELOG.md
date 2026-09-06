@@ -60,3 +60,18 @@ edits that a user would not notice do not belong here.
   finish, preview, policy edit persisting to the project layer).
   Recorded in PROGRESS.md. v1 now awaits only the README
   (DESIGN §22/§25).
+
+### v1 complete: README + Omp Path A
+
+- 2026-09-06 — Features 009–010 passed. README rewritten to the DESIGN
+  §25 posture: one-liner, `cargo install --locked --git` (placeholder
+  URL) + from-a-clone install, doctor/start/finish quick start with real
+  output snippets, menu_tokens before/after, the not-a-skill-manager
+  note, a TUI section, and a text-only gif-script. New Omp Path A
+  adapter: `start --adapter omp` spawns `omp --config <run>/omp-config.yml`
+  where the overlay pins `skills.customDirectories` to the sealed workdir
+  and disables every discovery source (verified live against omp
+  18.1.11: the child listed exactly the mounted skill; foreign pantry
+  absent; `--no-skills` provably cannot substitute). `Adapter::
+  isolation_argv` now takes the run dir; `adapters` lists none/pi/omp
+  with a selftest that skips cleanly where omp is absent.

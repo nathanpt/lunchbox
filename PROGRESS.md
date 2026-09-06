@@ -1,23 +1,18 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-06 (v1 exit bar passed)
+Last updated: 2026-09-06 (README + Omp Path A milestone)
 
 ## Current repository state
 
-v1 exit bar met. Phase 1 + TUI milestone + both simplify passes: core
-CLI, Pi Path A adapter, and the four v1 TUI screens behind cargo
-features, each with a `--json` twin and headless snapshot tests;
-`--no-default-features` ships the CLI-only binary and the `tui`
-subcommand fails closed there. 84 unit + 21 integration tests green in
-both configurations. **Features 001–008 all pass.** Branch `main`;
-tree clean after each phase commit.
+v1 complete. Phase 1 + TUI milestone + two simplify passes + the README /
+Omp milestone: core CLI, Pi **and Omp** Path A adapters, the four v1 TUI
+screens behind cargo features, and the DESIGN §25 README. 84 unit + 22
+integration tests green in the default configuration, 69 + 22 with
+`--no-default-features`, zero warnings in both. **Features 001–010 all
+pass.** Branch `main`; tree clean after each phase commit.
 
-Remaining for v1 proper (DESIGN §22 Finish v1/§25): the README
-(one-liner, `cargo install --locked --git` install, gif-script,
-compose-with-pantry note). After v1: Omp Path A adapter, Path B
-run-local agents, `--from` multi-worker manifests, scan-command hook,
-`skills/lunchbox/` driver Skill. Work paused here at the user's request
-(2026-09-06); no next feature started.
+Next (DESIGN §22 "Next"): Path B run-local agents, `--from` multi-worker
+manifests, scan-command hook, `skills/lunchbox/` driver Skill.
 
 ## v1 exit bar walkthrough (feature-008, 2026-09-06)
 
@@ -29,6 +24,49 @@ performed by the user in a real terminal against real state on
 preview, and a policy edit persisting to the project layer in a scratch
 project (keeping the global layer untouched); user verdict: "all four
 screens behaved". Step 3: this record.
+
+## README + Omp milestone verification (2026-09-06, this machine)
+
+Exec-plan: `docs/exec-plans/completed/omp-readme-milestone.md`.
+
+**Omp isolation probe (outcome VERIFIED).** omp 18.1.11; `--config` loads
+a repeatable per-run config overlay. Observer = headless
+`omp -p --no-session --no-title --max-time … 'List the names of your
+available skills. Names only.'` (logs name no skills — observer (a) dead).
+Winning recipe: overlay setting `skills.customDirectories` to the sealed
+workdir plus `enableAgentsUser/Project`, `enableClaudeUser/Project`,
+`enableCodexUser`, `enablePiUser/Project` all false and
+`disabledProviders: [native, claude, codex, gemini, github, opencode,
+cursor, agents-md]`. Probes: with the overlay the reply listed exactly
+`marker-probe` (2/2 runs); without it the five foreign skills
+(debug, grill-me, handoff, project-foundation, simplify) appeared;
+`--no-skills` + customDirectories listed NONE — the pi-style flag recipe
+cannot work, `--skills` only filters discovered skills, and
+`OMP_PROFILE`/`--profile` isolates auth/session state, not discovery.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 84 unit + 22 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 69 unit + 22 integration, 0 failed, 0 warnings |
+| feature-009 quick start | clean copy of the tree + installed binary (`cargo install --locked --path .` into a temp CARGO_HOME), empty temp HOME: `doctor` → `finish` → `status` | every snippet matches: `menu_tokens    0  (0 skills union)`, `menu_tokens    this run: 27`, `without 0 (no skills found in none skill dirs)`, finish removes workdir |
+| feature-009 README content | grep | one-liner, `<repository-url>` placeholder, verbatim not-a-skill-manager sentence, all four `tui` commands present |
+| feature-009 pi example | `start … --adapter pi --wait -- -- pi -p "review the staged diff"`, temp HOME | spawns with isolation flags; pi exits 1 (no API key under temp HOME); teardown ran, `unmounted: true` |
+| feature-010 adapters | `lunchbox adapters [--explain]` | `omp 18.1.11 selftest: ok`; explain pins the overlay belief + probe date; omp-absent PATH → `omp not found; selftest skipped`, exit 0 (integration test `omp_selftest_skips_when_binary_absent`) |
+| feature-010 dry run | `HOME=<fake> start --library testdata/skills --skill demo-review --adapter omp --dry-run -- -- omp -p hi` | argv = `omp --config <run>/omp-config.yml omp -p hi`; overlay holds the workdir under `customDirectories`; `without ~27 (2 skills on omp global+project)` — omp skill_dirs see the fake tree |
+| feature-010 live spawn | `start … --adapter omp --wait -- -- omp -p --max-time 90 'List the names of your available skills. Names only.'` | reply: exactly `demo-review`; none of the five foreign skills (present on this machine — `without ~93 (5 skills on omp global+project)`); exit 0, workdir gone, `result.json` `unmounted: true`. First attempt at `--max-time 30` hit omp's deadline before any reply (title-gen adds a model call); 90 s sufficed |
+| Mock-omp spawn | integration test `omp_spawn_records_audit_and_overlay` | audit spawn argv prefix `omp --config <run>/omp-config.yml` + user argv; overlay written; abort → workdir gone, outcome `aborted` |
+| Doctor drift | `HOME=<fake> doctor` and `doctor --adapter omp` | pi rows unchanged (2 skills, menu_tokens 27); omp override scans the same fake tree |
+
+Deviations from the exec-plan, all recorded here: the README existed since
+Phase 1, so Step 2 rewrote it to the DESIGN §25 contract instead of
+creating one (the old snippet's "pi skill dirs" `without`-line was stale —
+real output says "none skill dirs" for `--adapter none`); `start`'s
+isolation summary line gained an omp branch (`path A config overlay:
+--config <run>/omp-config.yml`) so omp does not print pi's flags — the
+plan said "nothing else in main.rs", but the shared line would have been
+false for omp; the live isolation check ran with the real HOME instead of
+the fake tree (a fake HOME strips omp's auth so no reply is possible, and
+the real `~/.omp/agent/skills` pantry is the stronger adversary).
 
 ## TUI milestone verification (2026-09-06, this machine)
 
@@ -141,12 +179,12 @@ None in flight.
 
 | Unknown | Blocks | Resolution path |
 |---|---|---|
-| Omp per-invocation discovery-off keys (`--skills` filter semantics, `OMP_PROFILE`) | Omp Path A adapter | Probe at adapter implementation (DESIGN §24) |
+| Omp per-invocation discovery-off keys | Omp Path A adapter | **Resolved 2026-09-06**: per-run `--config` overlay (recipe above); probe VERIFIED against omp 18.1.11 |
 | Pi `--skill` flag semantics (per-package vs pantry-root) | Pi adapter robustness | Plan contingency: if spawned pi errors or loads nothing, switch `isolation_argv` to single `--skill <workdir>`; current per-package form verified working on 0.84.4 |
 
 ## Next useful move
 
-None in flight — work paused at the user's request after the v1 exit
-bar. When resumed: the README to finish v1 (DESIGN §22/§25), then Omp
-Path A adapter (DESIGN §23 step 10; probe its discovery-off keys first
-per the blocker table), then Path B run-local agents.
+Path B run-local agents (DESIGN §23 step 11): `write_run_agents` still
+bails "Path B not implemented in this build" in all three adapters;
+`--from` still refused. Scope it as its own milestone per DESIGN §14,
+including the `workdir/packs/<worker>` layout decision (§24).
