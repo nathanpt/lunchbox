@@ -10,7 +10,10 @@ pub mod pi;
 
 pub use none::NoneAdapter;
 pub use omp::OmpAdapter;
+
 pub use pi::PiAdapter;
+
+pub const ADAPTERS: [&str; 3] = ["none", "pi", "omp"];
 
 pub trait Adapter {
     fn name(&self) -> &'static str;
@@ -26,6 +29,8 @@ pub trait Adapter {
         skills: &[String],
         user_argv: &[String],
     ) -> Result<Vec<String>>;
+
+    fn isolation_summary(&self) -> &'static str;
 
     fn agent_dir_hint(&self) -> Option<PathBuf>;
 
@@ -49,7 +54,7 @@ pub fn resolve_adapter(name: &str) -> Result<Box<dyn Adapter>> {
         "none" => Ok(Box::new(NoneAdapter)),
         "pi" => Ok(Box::new(PiAdapter)),
         "omp" => Ok(Box::new(OmpAdapter)),
-        other => bail!("unknown adapter '{other}' (available: none, pi, omp)"),
+        other => bail!("unknown adapter '{other}' (available: {})", ADAPTERS.join(", ")),
     }
 }
 
@@ -185,6 +190,45 @@ pub fn detect_version(binary: &str) -> Result<Option<String>> {
         .find_map(|line| extract_semver(line))
         .ok_or_else(|| anyhow::anyhow!("could not parse a semver from '{binary} --version'"))?;
     Ok(Some(version))
+}
+
+pub fn pantry_base_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![
+        std::env::current_dir()
+            .map(|cwd| cwd.join(".agents").join("skills"))
+            .unwrap_or_else(|_| PathBuf::from(".agents/skills")),
+    ];
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join(".agents").join("skills"));
+    }
+    dirs
+}
+
+pub fn help_flag_selftest(
+    binary: &str,
+    version: &str,
+    required: &[&str],
+) -> Result<SelftestOutcome> {
+    let output = Command::new(binary)
+        .arg("--help")
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to run '{binary} --help': {e}"))?;
+    if !output.status.success() {
+        bail!("'{binary} --help' exited with {}", output.status);
+    }
+    let help = String::from_utf8_lossy(&output.stdout).into_owned();
+    if required.iter().all(|flag| help.contains(flag)) {
+        Ok(SelftestOutcome::Ok)
+    } else {
+        let state = required
+            .iter()
+            .map(|flag| format!("{flag}={}", help.contains(flag)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Ok(SelftestOutcome::Failed(format!(
+            "{binary} isolation flags drifted ({binary} {version}: {state})"
+        )))
+    }
 }
 
 fn extract_semver(line: &str) -> Option<String> {

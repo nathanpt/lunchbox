@@ -30,7 +30,9 @@ From a clone, prefix the commands below with `cargo run --`.
 See what your agent's skill menu looks like today — every skill dir the
 adapter scans, how many Skills live there, the estimated description-token
 cost (`menu_tokens`), and duplicate names across dirs. Read-only; nothing
-is mounted. This machine has an empty pantry:
+is mounted. This machine has an empty pantry (snippet paths are shortened:
+`~` is your home directory, `<project>` the clone; run ids and hashes
+truncated):
 
 ```sh
 lunchbox doctor

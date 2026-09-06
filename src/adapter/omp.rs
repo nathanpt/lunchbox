@@ -3,13 +3,24 @@ use crate::config::Config;
 use anyhow::{Context, Result, bail};
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub struct OmpAdapter;
 
 fn overlay_yaml(workdir: &Path) -> String {
     format!(
-        "skills:\n  enabled: true\n  customDirectories:\n    - {}\n  enableAgentsUser: false\n  enableAgentsProject: false\n  enableClaudeUser: false\n  enableClaudeProject: false\n  enableCodexUser: false\n  enablePiUser: false\n  enablePiProject: false\ndisabledProviders: [native, claude, codex, gemini, github, opencode, cursor, agents-md]\n",
+        r#"skills:
+  enabled: true
+  customDirectories:
+    - {}
+  enableAgentsUser: false
+  enableAgentsProject: false
+  enableClaudeUser: false
+  enableClaudeProject: false
+  enableCodexUser: false
+  enablePiUser: false
+  enablePiProject: false
+disabledProviders: [native, claude, codex, gemini, github, opencode, cursor, agents-md]
+"#,
         workdir.display()
     )
 }
@@ -24,21 +35,14 @@ impl Adapter for OmpAdapter {
     }
 
     fn skill_dirs(&self, _cfg: &Config) -> Vec<PathBuf> {
-        let mut dirs = vec![
-            env::current_dir()
-                .map(|cwd| cwd.join(".agents").join("skills"))
-                .unwrap_or_else(|_| PathBuf::from(".agents/skills")),
-        ];
+        let mut dirs = super::pantry_base_dirs();
         if let Some(home) = env::var_os("HOME") {
-            let home = PathBuf::from(home);
-            dirs.push(home.join(".agents").join("skills"));
-            let skills_dir = home.join(".omp").join("agent").join("skills");
-            if skills_dir.is_dir() {
-                dirs.push(skills_dir);
-            }
-            let managed_dir = home.join(".omp").join("agent").join("managed-skills");
-            if managed_dir.is_dir() {
-                dirs.push(managed_dir);
+            let agent_dir = PathBuf::from(home).join(".omp").join("agent");
+            for child in ["skills", "managed-skills"] {
+                let dir = agent_dir.join(child);
+                if dir.is_dir() {
+                    dirs.push(dir);
+                }
             }
         }
         dirs
@@ -65,6 +69,10 @@ impl Adapter for OmpAdapter {
         env::var_os("HOME").map(|home| PathBuf::from(home).join(".omp").join("agent"))
     }
 
+    fn isolation_summary(&self) -> &'static str {
+        "path A config overlay: --config <run>/omp-config.yml"
+    }
+
     fn write_run_agents(&self, _run_dir: &Path) -> Result<()> {
         bail!("Path B not implemented in this build")
     }
@@ -73,28 +81,14 @@ impl Adapter for OmpAdapter {
         let Some(version) = self.detect()? else {
             return Ok(super::SelftestOutcome::Skipped);
         };
-        let output = Command::new("omp")
-            .arg("--help")
-            .output()
-            .map_err(|e| anyhow::anyhow!("failed to run 'omp --help': {e}"))?;
-        if !output.status.success() {
-            bail!("'omp --help' exited with {}", output.status);
-        }
-        let help = String::from_utf8_lossy(&output.stdout).into_owned();
-        let has_config = help.contains("--config");
-        if has_config {
-            Ok(super::SelftestOutcome::Ok)
-        } else {
-            Ok(super::SelftestOutcome::Failed(format!(
-                "omp isolation flags drifted (omp {version}: --config={has_config})"
-            )))
-        }
+        super::help_flag_selftest("omp", &version, &["--config"])
     }
 
     fn explain(&self) -> String {
         "omp Path A: spawns `omp --config <run_dir>/omp-config.yml` followed by the user \
 argv. The per-run overlay sets skills.customDirectories to the sealed workdir and turns \
-every discovery source off (enableAgentsUser/Project, Claude, Codex, Pi user/project), so \
+every discovery source off (enableAgentsUser/Project, Claude, Codex, Pi user/project, and \
+disabledProviders: native, claude, codex, gemini, github, opencode, cursor, agents-md), so \
 the harness sees only the mounted packages. --no-skills is insufficient (probed: it also \
 disables customDirectories — with --no-skills plus the overlay the probe listed no skills); \
 --skills only filters already-discovered skills; OMP_PROFILE/--profile isolates auth and \

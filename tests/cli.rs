@@ -595,7 +595,7 @@ fn mock_harness(scratch_dir: &Path, binary: &str) -> PathBuf {
     fs::write(
         bin.join(binary),
         format!(
-            "#!/bin/sh\nexec >/dev/null 2>&1 </dev/null\nprintf '%s\\n' \"$@\" > {}\nsleep 60\n",
+            "#!/bin/sh\nexec >/dev/null 2>&1 </dev/null\nprintf '%s\\n' \"$@\" > {}\nexec sleep 60\n",
             script.display()
         ),
     )
@@ -979,7 +979,8 @@ fn abort_on_finished_run_is_a_no_op() {
         .env("PATH", &path_env)
         .current_dir(cwd.path())
         .assert()
-        .success();
+        .success()
+        .stdout(predicates::str::contains("aborted"));
     let result_again: Value =
         serde_json::from_str(&fs::read_to_string(run.join("result.json")).unwrap()).unwrap();
     assert_eq!(result_again["outcome"], serde_json::json!("aborted"));

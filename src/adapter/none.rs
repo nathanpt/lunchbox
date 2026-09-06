@@ -28,6 +28,10 @@ impl Adapter for NoneAdapter {
         bail!("adapter none never spawns; the workdir is mounted, not spawned")
     }
 
+    fn isolation_summary(&self) -> &'static str {
+        "adapter none — mounted, not spawned"
+    }
+
     fn agent_dir_hint(&self) -> Option<PathBuf> {
         None
     }

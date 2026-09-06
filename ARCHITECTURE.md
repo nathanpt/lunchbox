@@ -28,7 +28,7 @@ DESIGN §4.
 argv → config (two-layer merge) → resolve (pins → Locked)
      → mount (symlink, copy fallback) → run (manifest/lock/audit/result)
      → adapter none: print and exit
-     → adapter pi: isolation argv → spawn → wait → auto-finish
+     → adapter pi/omp: isolation argv → spawn → wait → auto-finish
 ```
 
 - `src/config/` — two-layer config (`~/.lunchbox/config.toml` +
@@ -45,13 +45,13 @@ argv → config (two-layer merge) → resolve (pins → Locked)
   symlink escapes outside the package root.
 - `src/run/` — run ids, manifest/lock/audit/result schemas, `flock`-guarded
   idempotent teardown, status/gc/latest-run discovery.
-- `src/adapter/` — the DESIGN §19 trait; `none` (mount-only) and `pi`
-  (Path A: `--no-skills` + one `--skill` per package). `omp` refuses
-  until its phase.
+- `src/adapter/` — the DESIGN §19 trait; `none` (mount-only), `pi` (Path A:
+  `--no-skills` + one `--skill` per package), and `omp` (Path A: per-run
+  `--config` overlay pinning `skills.customDirectories` to the workdir).
 - Pure decision logic (merge algebra, pin parsing, frontmatter parsing,
   token estimation, tree hashing) is unit-tested without side effects;
   lifecycle behavior is exercised through the real binary in `tests/cli.rs`
-  with temp `HOME`s and a mocked `pi`.
+  with temp `HOME`s and mocked `pi`/`omp` harnesses.
 
 ## Boundaries and invariants
 

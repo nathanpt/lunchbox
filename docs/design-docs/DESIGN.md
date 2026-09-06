@@ -369,7 +369,13 @@ Omp (oh-my-pi) is in the same family. Adapter must discover:
 - how to disable `enableAgentsUser` / default `~/.agents/skills` discovery for one invocation
 - how to pass an explicit skills root
 - binary name (`omp` / `omp` CLI as installed)
-- (probed 2026-09-06) `--no-skills` and `--skills=<glob>` exist in `omp --help`, but `--skills` only filters discovered skills — no explicit-root flag found; `OMP_PROFILE` ("isolated agent state") is the candidate mechanism to test
+- (probed 2026-09-06) `--no-skills` and `--skills=<glob>` exist in `omp --help`, but
+  `--skills` only filters discovered skills and `--no-skills` also disables explicit
+  custom directories; `OMP_PROFILE` ("isolated agent state") isolates auth/session
+  state, not skill discovery. Resolved mechanism: a per-invocation `--config` overlay
+  setting `skills.customDirectories` to the workdir with every `enable*` source toggle
+  false — verified live on omp 18.1.11 (headless probe reply listed exactly the mounted
+  skill; the foreign pantry appeared only without the overlay)
 
 Same rule: if discovery cannot be disabled, refuse to claim Path A isolation.
 
@@ -581,7 +587,8 @@ v1 ships `pi` and `omp`. Each adapter implements:
 ```text
 detect() -> installed version / binary path
 skill_dirs() -> global + project paths for doctor
-isolation_argv(workdir, pack, user_argv) -> full argv  | error
+isolation_argv(run_dir, workdir, pack, user_argv) -> full argv | error (omp writes its per-run --config overlay into run_dir here)
+isolation_summary() -> one-line isolation label for start's summary
 agent_dir_hint() -> where standing agents live (never write here)
 write_run_agents(run_dir, workers, pack_dirs) -> files written for Path B
 selftest() -> isolation flags still exist
@@ -729,7 +736,7 @@ Do not start with adapters. Do not start with Path B. Core before TUI; TUI befor
 
 ## 24. Open questions (do not block MVP)
 
-- Exact Omp config keys for per-invocation discovery off (`enableAgentsUser`, `--skills` filter semantics, `OMP_PROFILE` isolation). Probe at adapter implementation.
+- Resolved 2026-09-06: Omp per-invocation discovery-off via a `--config` overlay (`skills.customDirectories` + source toggles off) — recorded in §13 Omp and PROGRESS.md.
 - Two-layer merge algebra beyond "project wins / `deny` unions": `allow` and `library_paths` precedence. Specify when the config module is designed.
 - Token estimator: chars/4 vs a small BPE later.
 - Should `without_menu_tokens` include built-in harness skills we cannot see? v1: only filesystem dirs we scan.

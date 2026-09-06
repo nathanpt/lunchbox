@@ -3,7 +3,6 @@ use crate::config::Config;
 use anyhow::{Result, bail};
 use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub struct PiAdapter;
 
@@ -17,15 +16,12 @@ impl Adapter for PiAdapter {
     }
 
     fn skill_dirs(&self, _cfg: &Config) -> Vec<PathBuf> {
-        let mut dirs = vec![
-            env::current_dir()
-                .map(|cwd| cwd.join(".agents").join("skills"))
-                .unwrap_or_else(|_| PathBuf::from(".agents/skills")),
-        ];
+        let mut dirs = super::pantry_base_dirs();
         if let Some(home) = env::var_os("HOME") {
-            let home = PathBuf::from(home);
-            dirs.push(home.join(".agents").join("skills"));
-            let pi_dir = home.join(".pi").join("agent").join("skills");
+            let pi_dir = PathBuf::from(home)
+                .join(".pi")
+                .join("agent")
+                .join("skills");
             if pi_dir.is_dir() {
                 dirs.push(pi_dir);
             }
@@ -49,6 +45,10 @@ impl Adapter for PiAdapter {
         Ok(argv)
     }
 
+    fn isolation_summary(&self) -> &'static str {
+        "path A flags applied: --no-skills --skill <workdir>"
+    }
+
     fn agent_dir_hint(&self) -> Option<PathBuf> {
         env::var_os("HOME").map(|home| PathBuf::from(home).join(".pi").join("agent"))
     }
@@ -61,23 +61,7 @@ impl Adapter for PiAdapter {
         let Some(version) = self.detect()? else {
             return Ok(super::SelftestOutcome::Skipped);
         };
-        let output = Command::new("pi")
-            .arg("--help")
-            .output()
-            .map_err(|e| anyhow::anyhow!("failed to run 'pi --help': {e}"))?;
-        if !output.status.success() {
-            bail!("'pi --help' exited with {}", output.status);
-        }
-        let help = String::from_utf8_lossy(&output.stdout).into_owned();
-        let has_no_skills = help.contains("--no-skills");
-        let has_skill = help.contains("--skill");
-        if has_no_skills && has_skill {
-            Ok(super::SelftestOutcome::Ok)
-        } else {
-            Ok(super::SelftestOutcome::Failed(format!(
-                "pi isolation flags drifted (pi {version}: --no-skills={has_no_skills}, --skill={has_skill})"
-            )))
-        }
+        super::help_flag_selftest("pi", &version, &["--no-skills", "--skill"])
     }
 
     fn explain(&self) -> String {

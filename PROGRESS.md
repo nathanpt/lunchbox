@@ -68,6 +68,38 @@ false for omp; the live isolation check ran with the real HOME instead of
 the fake tree (a fake HOME strips omp's auth so no reply is possible, and
 the real `~/.omp/agent/skills` pantry is the stronger adversary).
 
+## Post-README/Omp simplify pass (2026-09-06)
+
+Three-lane review (reuse / quality / efficiency) of the milestone diff
+(`6f4892a`); accepted and fixed: `skill_dirs` pantry base and the
+`--help` selftest scaffold were near-verbatim copies across pi/omp — now
+`pantry_base_dirs()` and `help_flag_selftest(binary, version, required)`
+in `src/adapter/mod.rs` (pi's drift message byte-identical, verified);
+the adapter registry was triplicated (`resolve_adapter`, `cmd_adapters`,
+the unknown-adapter text) — now one `ADAPTERS` const; start's isolation
+label was a string-match on adapter names in main.rs (mechanism
+knowledge leaking out of the trait, introduced by this milestone) — now
+`Adapter::isolation_summary()`; ARCHITECTURE.md ("omp refuses", diagram)
+and DESIGN §13/§19/§24 still described pre-omp reality — synced
+(§19 signature + `isolation_summary`; §24 #1 annotated resolved);
+README snippet paths (`~`, `<project>`) read as literal output against
+feature-009's "output matches" — one abbreviation note added; omp's
+explain() omitted the `disabledProviders` half of the recipe — appended;
+`overlay_yaml` was a single escaped string (the security-load-bearing
+artifact) — raw-string template, output byte-identical (cmp against
+pre-change dry-run); `abort_on_finished_run_is_a_no_op` had lost its
+`.stdout(contains("aborted"))` assertion to a mid-session edit mishap —
+restored from `ce6e08f`; the test mock orphaned a `sleep 60` child on
+abort — `exec sleep 60`. Deferred to TD-003: selftest re-detects (a
+duplicate `--version` spawn per present harness in `adapters`, cold
+path). Rejected: extracting the audit-parse block in tests (file
+convention is explicit scripts), renaming `isolation_argv` (churn; doc
+sync instead), restripping the absent-bin test PATH (plan-prescribed).
+Verified: `cargo test` (84 unit + 22 integration) and
+`cargo test --no-default-features` (69 + 22) green, zero warnings;
+`adapters`/`start`/`omp-config.yml` outputs byte-identical to the
+pre-change binary after run-id/path normalization.
+
 ## TUI milestone verification (2026-09-06, this machine)
 
 Exec-plan: `docs/exec-plans/completed/tui-milestone.md`; decisions in
