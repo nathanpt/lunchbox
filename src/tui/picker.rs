@@ -1,6 +1,6 @@
 use crate::library::ListedSkill;
 use crate::tui::terminal::{self, Restore};
-use crate::{PreparedRun, prepare_run};
+use crate::run::{PreparedRun, prepare_run};
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -71,7 +71,21 @@ impl PickerState {
             self.status = "select at least one skill first".to_string();
             return Action::Continue;
         }
-        match prepare_run(&self.cfg, "none", "tui picker run", &names, &self.libraries, &[]) {
+        let workers = vec![crate::run::Worker {
+            name: "default".to_string(),
+            pack: names,
+            description: None,
+        }];
+        match prepare_run(
+            &self.cfg,
+            "none",
+            "tui picker run",
+            workers,
+            self.cfg.max_menu_tokens,
+            &self.libraries,
+            &[],
+            false,
+        ) {
             Ok(run) => {
                 self.status = format!("run {} mounted ({})", run.run_id, run.mount_mode.as_str());
                 self.run = Some(run);

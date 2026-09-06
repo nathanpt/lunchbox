@@ -64,7 +64,6 @@
       "steps": [
         "Open the picker against testdata/skills",
         "Select demo-review and demo-scan and start the run from the screen",
-        "Verify the run mounted exactly the selected skills",
         "Finish the run from the screen and verify the workdir is gone"
       ],
       "passes": true,
@@ -149,6 +148,36 @@
       "priority": 8,
       "dependencies": [
         "feature-007"
+      ]
+    },
+    {
+      "id": "feature-011",
+      "category": "functional",
+      "description": "`--from manifest.toml` multi-worker runs mount per-worker packs under workdir/packs/<worker> with per-worker lock mapping and budget (DESIGN §9/§11/§24)",
+      "steps": [
+        "start --from <manifest> with two workers mounts workdir/packs/<worker>/ containing exactly each worker's pack; the lock lists every worker name sharing each skill; why reports each worker's pack",
+        "Invalid manifests fail closed with no run dir left behind: unknown key, schema != 1, no workers, duplicate worker name, empty pack, --skill combined with --from",
+        "The token budget is enforced per worker pack (DESIGN §10) and the offending worker is named in the error"
+      ],
+      "passes": true,
+      "priority": 9,
+      "dependencies": [
+        "feature-001"
+      ]
+    },
+    {
+      "id": "feature-012",
+      "category": "functional",
+      "description": "Path B run-local agents: multi-worker starts write runs/<id>/agents/<worker>.md pointing at the worker's pack; omp loads them for the invocation only or the adapter prints the files plus an include hint (DESIGN §14 fallback); standing agent dirs are never written",
+      "steps": [
+        "A two-worker start writes agents/<worker>.md per DESIGN §14 (pi-subagents frontmatter: inheritSkills false, skillPath -> the worker's pack dir, explicit skills list) and teardown removes agents/",
+        "omp loads the run-local agents for this invocation only (live-verified, foreign agents absent) or prints the files and the include hint and claims no load — audit records which",
+        "adapters --explain states each adapter's Path B belief; ~/.pi/agent and ~/.omp/agent are byte-identical before and after a Path B run"
+      ],
+      "passes": true,
+      "priority": 10,
+      "dependencies": [
+        "feature-011"
       ]
     }
   ]

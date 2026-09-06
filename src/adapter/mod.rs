@@ -15,6 +15,19 @@ pub use pi::PiAdapter;
 
 pub const ADAPTERS: [&str; 3] = ["none", "pi", "omp"];
 
+pub struct AgentSpec {
+    pub name: String,
+    pub description: String,
+    pub pack_dir: PathBuf,
+    pub skills: Vec<String>,
+}
+
+pub struct AgentFiles {
+    pub loaded: bool,
+    pub files: Vec<PathBuf>,
+    pub include_hint: Option<String>,
+}
+
 pub trait Adapter {
     fn name(&self) -> &'static str;
 
@@ -34,10 +47,9 @@ pub trait Adapter {
 
     fn agent_dir_hint(&self) -> Option<PathBuf>;
 
-    #[allow(dead_code)]
-    fn write_run_agents(&self, run_dir: &Path) -> Result<()>;
+    fn write_run_agents(&self, run_dir: &Path, agents: &[AgentSpec]) -> Result<AgentFiles>;
 
-    fn selftest(&self) -> Result<SelftestOutcome>;
+    fn selftest(&self, version: Option<&str>) -> Result<SelftestOutcome>;
 
     fn explain(&self) -> String;
 }
@@ -323,14 +335,45 @@ mod tests {
             ]
         );
     }
+    #[test]
+    fn none_write_run_agents_is_empty() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let files = NoneAdapter
+            .write_run_agents(dir.path(), &[])
+            .unwrap();
+        assert_eq!(files.loaded, false);
+        assert!(files.files.is_empty());
+        assert!(files.include_hint.is_none());
+        assert!(!dir.path().join("agents").exists());
+    }
 
     #[test]
-    fn path_b_is_refused() {
-        let err = PiAdapter.write_run_agents(Path::new("/tmp/x")).unwrap_err().to_string();
-        assert_eq!(err, "Path B not implemented in this build");
-        assert!(NoneAdapter.write_run_agents(Path::new("/tmp/x")).is_err());
-        assert!(OmpAdapter.write_run_agents(Path::new("/tmp/x")).is_err());
+    fn pi_write_run_agents_pins_frontmatter() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let pack_dir = dir.path().join("packs").join("reviewer");
+        let spec = AgentSpec {
+            name: "reviewer".to_string(),
+            description: "Review specialist".to_string(),
+            pack_dir: pack_dir.clone(),
+            skills: vec!["demo-scan".to_string()],
+        };
+        let files = PiAdapter.write_run_agents(dir.path(), &[spec]).unwrap();
+        assert_eq!(files.loaded, false);
+        assert_eq!(files.files, vec![dir.path().join("agents").join("reviewer.md")]);
+        let hint = files.include_hint.unwrap();
+        assert!(hint.contains("~/.pi/agent/agents"), "{hint}");
+        assert!(hint.contains("must not outlive the run"), "{hint}");
+        let text = std::fs::read_to_string(dir.path().join("agents").join("reviewer.md")).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                "---\nname: reviewer\ndescription: Review specialist\ninheritSkills: false\nskillPath: {}\nskills: demo-scan\ntools: read, grep, find, bash\n---\nWork only with the Skills in your skillPath. Do not search ~/.agents/skills or any global skill directory.\n",
+                pack_dir.display()
+            )
+        );
     }
+
+
 
     #[test]
     fn pi_skill_dirs_include_existing_pi_dir_only() {

@@ -32,6 +32,60 @@ pub fn mount(locked: &[Locked], workdir: &Path, mode: MountMode) -> Result<Mount
     }
 }
 
+pub fn mount_packs(
+    locked: &[Locked],
+    packs_root: &Path,
+    workers: &[crate::run::Worker],
+    mode: MountMode,
+) -> Result<MountMode> {
+    fs::create_dir_all(packs_root)
+        .with_context(|| format!("failed to create packs dir {}", packs_root.display()))?;
+    match mode {
+        MountMode::Copy => {
+            packs_copy_all(locked, packs_root, workers)?;
+            Ok(MountMode::Copy)
+        }
+        MountMode::Symlink => {
+            let mut linked = true;
+            'worker: for worker in workers {
+                let dir = packs_root.join(&worker.name);
+                fs::create_dir_all(&dir)
+                    .with_context(|| format!("failed to create {}", dir.display()))?;
+                for name in &worker.pack {
+                    let Some(skill) = locked.iter().find(|l| &l.name == name) else {
+                        continue;
+                    };
+                    if symlink(&skill.source, &dir.join(name)).is_err() {
+                        linked = false;
+                        break 'worker;
+                    }
+                }
+            }
+            if linked {
+                return Ok(MountMode::Symlink);
+            }
+            clean_dir(packs_root)?;
+            packs_copy_all(locked, packs_root, workers)?;
+            Ok(MountMode::Copy)
+        }
+    }
+}
+
+fn packs_copy_all(locked: &[Locked], packs_root: &Path, workers: &[crate::run::Worker]) -> Result<()> {
+    for worker in workers {
+        let dir = packs_root.join(&worker.name);
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create {}", dir.display()))?;
+        for name in &worker.pack {
+            let Some(skill) = locked.iter().find(|l| &l.name == name) else {
+                continue;
+            };
+            copy_tree(&skill.source, &dir.join(name))?;
+        }
+    }
+    Ok(())
+}
+
 fn copy_all(locked: &[Locked], workdir: &Path) -> Result<()> {
     for skill in locked {
         copy_tree(&skill.source, &workdir.join(&skill.name))?;
@@ -184,5 +238,88 @@ mod tests {
         assert_eq!(mode, MountMode::Copy);
         assert!(!workdir.join("pkg").is_symlink());
         assert!(workdir.join("pkg").join("SKILL.md").is_file());
+    }
+
+    fn worker(name: &str, pack: &[&str]) -> crate::run::Worker {
+        crate::run::Worker {
+            name: name.to_string(),
+            pack: pack.iter().map(|s| s.to_string()).collect(),
+            description: None,
+        }
+    }
+
+    #[test]
+    fn mount_packs_links_each_workers_own_skills() {
+        let dir = TempDir::new().unwrap();
+        let review = package(&dir);
+        let scan = {
+            let package = dir.path().join("scan-pkg");
+            fs::create_dir_all(&package).unwrap();
+            fs::write(package.join("SKILL.md"), "---\nname: demo-scan\n---\n").unwrap();
+            package
+        };
+        let locked = vec![
+            Locked {
+                name: "demo-review".to_string(),
+                source: review.clone(),
+                hash: "sha256:r".to_string(),
+                description_tokens: 14,
+            },
+            Locked {
+                name: "demo-scan".to_string(),
+                source: scan.clone(),
+                hash: "sha256:s".to_string(),
+                description_tokens: 13,
+            },
+        ];
+        let packs_root = dir.path().join("packs");
+        let workers = vec![
+            worker("parent", &["demo-review", "demo-scan"]),
+            worker("reviewer", &["demo-scan"]),
+        ];
+        let mode = mount_packs(&locked, &packs_root, &workers, MountMode::Symlink).unwrap();
+        assert_eq!(mode, MountMode::Symlink);
+        assert_eq!(
+            fs::read_link(packs_root.join("parent").join("demo-review")).unwrap(),
+            review
+        );
+        assert_eq!(
+            fs::read_link(packs_root.join("parent").join("demo-scan")).unwrap(),
+            scan
+        );
+        assert_eq!(
+            fs::read_link(packs_root.join("reviewer").join("demo-scan")).unwrap(),
+            scan
+        );
+        assert!(!packs_root.join("reviewer").join("demo-review").exists());
+    }
+
+    #[test]
+    fn mount_packs_symlink_failure_falls_back_to_copy_for_all_workers() {
+        let dir = TempDir::new().unwrap();
+        let package = package(&dir);
+        let locked = locked_one("pkg", &package);
+        let packs_root = dir.path().join("packs");
+        fs::create_dir_all(packs_root.join("first")).unwrap();
+        symlink("/nonexistent-blocker", packs_root.join("first").join("pkg")).unwrap();
+        let workers = vec![worker("first", &["pkg"]), worker("second", &["pkg"])];
+        let mode = mount_packs(&locked, &packs_root, &workers, MountMode::Symlink).unwrap();
+        assert_eq!(mode, MountMode::Copy);
+        for worker in ["first", "second"] {
+            assert!(!packs_root.join(worker).join("pkg").is_symlink());
+            assert!(packs_root.join(worker).join("pkg").join("SKILL.md").is_file());
+        }
+    }
+
+    #[test]
+    fn mount_packs_copy_mode_copies_into_worker_dirs() {
+        let dir = TempDir::new().unwrap();
+        let package = package(&dir);
+        let locked = locked_one("pkg", &package);
+        let packs_root = dir.path().join("packs");
+        let workers = vec![worker("only", &["pkg"])];
+        let mode = mount_packs(&locked, &packs_root, &workers, MountMode::Copy).unwrap();
+        assert_eq!(mode, MountMode::Copy);
+        assert!(packs_root.join("only").join("pkg").join("refs").join("a.txt").is_file());
     }
 }

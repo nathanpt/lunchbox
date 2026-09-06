@@ -413,6 +413,10 @@ fn start_json_reports_numbers() {
     assert_eq!(report["adapter"], serde_json::json!("none"));
     assert_eq!(report["mount_mode"], serde_json::json!("symlink"));
     assert_eq!(report["skills"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        report["workers"],
+        serde_json::json!([{"name": "default", "menu_tokens": 27}])
+    );
 }
 
 #[test]
@@ -484,14 +488,378 @@ fn hash_pin_roundtrip_and_mismatch() {
 }
 
 #[test]
-fn from_manifest_is_refused_this_phase() {
+fn from_manifest_mounts_per_worker_packs() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let manifest = cwd.path().join("m.toml");
+    fs::write(
+        &manifest,
+        "schema = 1\ntask = \"path b check\"\nadapter = \"none\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\ndescription = \"Review specialist\"\npack = [\"demo-scan\"]\n",
+    )
+    .unwrap();
+    let output = lbx()
+        .args([
+            "start",
+            "--from",
+            manifest.to_str().unwrap(),
+            "--library",
+            skills.to_str().unwrap(),
+            "--adapter",
+            "none",
+            "--json",
+        ])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    let run_id = report["run_id"].as_str().unwrap().to_string();
+    assert_eq!(
+        report["workers"],
+        serde_json::json!([
+            {"name": "parent", "menu_tokens": 14},
+            {"name": "reviewer", "menu_tokens": 13},
+        ])
+    );
+    let run = only_run(home.path());
+    let workdir = run.join("workdir");
+    assert!(workdir.join("packs").join("parent").join("demo-review").is_dir());
+    assert!(workdir.join("packs").join("reviewer").join("demo-scan").is_dir());
+    assert!(!workdir.join("demo-review").exists());
+    assert!(!workdir.join("demo-scan").exists());
+    let lock = fs::read_to_string(run.join("lunchbox.lock")).unwrap();
+    let lock: Value = toml::from_str(&lock).unwrap();
+    let skills_by_name: std::collections::HashMap<&str, &Value> = lock["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| (s["name"].as_str().unwrap(), s))
+        .collect();
+    assert_eq!(
+        skills_by_name["demo-review"]["workers"],
+        serde_json::json!(["parent"])
+    );
+    assert_eq!(
+        skills_by_name["demo-scan"]["workers"],
+        serde_json::json!(["reviewer"])
+    );
+    assert_eq!(lock["workdir"].as_str().unwrap(), workdir.to_str().unwrap());
+
+    let why = lbx()
+        .args(["why"])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let why = String::from_utf8(why).unwrap();
+    assert!(why.contains("worker parent: demo-review"), "{why}");
+    assert!(why.contains("worker reviewer: demo-scan"), "{why}");
+
     lbx()
-        .args(["start", "--from", "manifest.toml"])
+        .args(["finish", &run_id])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    assert!(!workdir.exists());
+    assert!(!run.join("agents").exists());
+    let result: Value =
+        serde_json::from_str(&fs::read_to_string(run.join("result.json")).unwrap()).unwrap();
+    assert_eq!(result["unmounted"], serde_json::json!(true));
+}
+
+#[test]
+fn from_manifest_rejects_invalid() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let unused = cwd.path().join("unused.toml").to_string_lossy().into_owned();
+    let cases: Vec<(&str, String, &str)> = vec![
+        (
+            "schema 2",
+            "schema = 2\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\npack = [\"demo-review\"]\n".to_string(),
+            "manifest schema 2 not supported (expected 1)",
+        ),
+        (
+            "unknown key",
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\nbogus = 1\n\n[[workers]]\nname = \"w\"\npack = [\"demo-review\"]\n".to_string(),
+            "failed to parse manifest",
+        ),
+        (
+            "duplicate worker",
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"w\"\npack = [\"demo-scan\"]\n".to_string(),
+            "duplicate worker name 'w' in manifest",
+        ),
+        (
+            "empty pack",
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\npack = []\n".to_string(),
+            "worker 'w' has an empty pack",
+        ),
+        (
+            "no workers",
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n".to_string(),
+            "manifest has no workers",
+        ),
+    ];
+    for (label, body, needle) in cases {
+        let path = cwd.path().join(format!("{label}.toml"));
+        fs::write(&path, body).unwrap();
+        lbx()
+            .args([
+                "start",
+                "--from",
+                path.to_str().unwrap(),
+                "--library",
+                skills.to_str().unwrap(),
+                "--adapter",
+                "none",
+            ])
+            .env("HOME", home.path())
+            .current_dir(cwd.path())
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains(needle));
+    }
+    lbx()
+        .args([
+            "start",
+            "--from",
+            &unused,
+            "--skill",
+            "demo-review",
+        ])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
         .assert()
         .failure()
         .stderr(predicates::str::contains(
-            "manifest-driven multi-worker runs arrive with Path B",
+            "--skill and --from are mutually exclusive",
         ));
+    let runs: Vec<_> = fs::read_dir(runs_dir(home.path()))
+        .map(|entries| entries.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(runs.is_empty(), "invalid manifests must leave no run dir: {runs:?}");
+}
+
+#[test]
+fn from_manifest_spawn_uses_parent_pack() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let record = mock_pi(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
+    let manifest = cwd.path().join("m.toml");
+    fs::write(
+        &manifest,
+        "schema = 1\ntask = \"path b check\"\nadapter = \"pi\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\npack = [\"demo-scan\"]\n",
+    )
+    .unwrap();
+    lbx()
+        .args([
+            "start",
+            "--from",
+            manifest.to_str().unwrap(),
+            "--library",
+            skills.to_str().unwrap(),
+            "--adapter",
+            "pi",
+            "--no-wait",
+            "--",
+            "pi",
+            "-p",
+            "hi",
+        ])
+        .env("HOME", home.path())
+        .env("PATH", &path_env)
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+
+    let run = only_run(home.path());
+    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
+    let spawn: Value = audit
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .find(|event: &Value| event["event"] == "spawn")
+        .expect("spawn event present");
+    let argv: Vec<&str> = spawn["argv"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    let expected_skill = run.join("workdir").join("packs").join("parent").join("demo-review");
+    assert_eq!(
+        argv,
+        vec![
+            "pi",
+            "--no-skills",
+            "--skill",
+            expected_skill.to_str().unwrap(),
+            "pi",
+            "-p",
+            "hi",
+        ],
+        "{argv:?}"
+    );
+    let recorded = fs::read_to_string(&record).unwrap();
+    assert!(recorded.contains("--no-skills"), "{}", recorded);
+
+    lbx()
+        .args(["abort"])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    assert!(!run.join("workdir").exists());
+}
+
+#[test]
+fn from_manifest_pi_prints_agents() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let record = mock_pi(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
+    let manifest = cwd.path().join("m.toml");
+    fs::write(
+        &manifest,
+        "schema = 1\ntask = \"path b check\"\nadapter = \"pi\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\ndescription = \"Review specialist\"\npack = [\"demo-scan\"]\n",
+    )
+    .unwrap();
+    let output = lbx()
+        .args([
+            "start",
+            "--from",
+            manifest.to_str().unwrap(),
+            "--library",
+            skills.to_str().unwrap(),
+            "--adapter",
+            "pi",
+            "--dry-run",
+            "--",
+            "pi",
+            "-p",
+            "hi",
+        ])
+        .env("HOME", home.path())
+        .env("PATH", &path_env)
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("agents         1 run-local (printed; not auto-loaded)"), "{text}");
+    assert!(text.contains("note           pi-subagents discovers agents only from ~/.pi/agent/agents"), "{text}");
+    assert!(text.contains("--no-skills"), "{text}");
+    assert!(!record.exists(), "dry-run must not spawn");
+
+    let run = only_run(home.path());
+    let run_id = run.file_name().unwrap().to_string_lossy().into_owned();
+    let agent = fs::read_to_string(run.join("agents").join("reviewer.md")).unwrap();
+    let expected_pack = run.join("workdir").join("packs").join("reviewer");
+    assert!(agent.starts_with("---\nname: reviewer\ndescription: Review specialist\ninheritSkills: false\n"), "{agent}");
+    assert!(agent.contains(&format!("skillPath: {}", expected_pack.display())), "{agent}");
+    assert!(agent.contains("skills: demo-scan\n"), "{agent}");
+    assert!(agent.contains("tools: read, grep, find, bash"), "{agent}");
+    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
+    let agents_event: Value = audit
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .find(|event: &Value| event["event"] == "agents")
+        .expect("agents event present");
+    assert_eq!(agents_event["adapter"], serde_json::json!("pi"));
+    assert_eq!(agents_event["files"], serde_json::json!(["reviewer.md"]));
+    assert_eq!(agents_event["loaded"], serde_json::json!(false));
+
+    lbx()
+        .args(["finish", &run_id])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    assert!(!run.join("agents").exists());
+    assert!(!run.join("workdir").exists());
+}
+
+#[test]
+fn omp_manifest_overlay_and_agents() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let record = mock_omp(cwd.path());
+    let path_env = path_with_mock_bin(cwd.path());
+    let manifest = cwd.path().join("m.toml");
+    fs::write(
+        &manifest,
+        "schema = 1\ntask = \"path b check\"\nadapter = \"omp\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\npack = [\"demo-scan\"]\n",
+    )
+    .unwrap();
+    let output = lbx()
+        .args([
+            "start",
+            "--from",
+            manifest.to_str().unwrap(),
+            "--library",
+            skills.to_str().unwrap(),
+            "--adapter",
+            "omp",
+            "--no-wait",
+            "--",
+            "omp",
+            "-p",
+            "hello",
+        ])
+        .env("HOME", home.path())
+        .env("PATH", &path_env)
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("agents         1 run-local (printed; not auto-loaded)"), "{text}");
+    assert!(text.contains("note           omp discovers task agents only from ~/.omp/agent/agents"), "{text}");
+
+    let run = only_run(home.path());
+    let overlay = fs::read_to_string(run.join("omp-config.yml")).unwrap();
+    assert!(overlay.contains("customDirectories"), "{overlay}");
+    assert!(
+        overlay.contains(run.join("workdir").join("packs").join("parent").to_str().unwrap()),
+        "{overlay}"
+    );
+    assert!(!overlay.contains("agents:"), "print mode keeps the overlay skills-only: {overlay}");
+    let agent = fs::read_to_string(run.join("agents").join("reviewer.md")).unwrap();
+    assert!(agent.starts_with("---\nname: reviewer\ndescription: Lunchbox run-local agent for worker reviewer\n"), "{agent}");
+    assert!(agent.contains("tools:"), "{agent}");
+    assert!(
+        agent.contains(run.join("workdir").join("packs").join("reviewer").to_str().unwrap()),
+        "{agent}"
+    );
+    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
+    let agents_event: Value = audit
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .find(|event: &Value| event["event"] == "agents")
+        .expect("agents event present");
+    assert_eq!(agents_event["adapter"], serde_json::json!("omp"));
+    assert_eq!(agents_event["loaded"], serde_json::json!(false));
+    let recorded = fs::read_to_string(&record).unwrap();
+    assert!(recorded.contains("--config"), "{}", recorded);
+
+    lbx()
+        .args(["abort"])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    assert!(!run.join("workdir").exists());
+    assert!(!run.join("agents").exists());
 }
 
 #[test]

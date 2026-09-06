@@ -236,7 +236,14 @@ name = "scout"
 pack = ["explore"]
 ```
 
-v1 MVP may use a single implicit worker named `default` when `--skill` is passed on the CLI.
+Worker also takes an optional `description`, used as the run-local agent's
+description (§14); omitted, it defaults to `Lunchbox run-local agent for
+worker <name>`.
+
+A manifest supplied to `start --from` is intent only: `run_id`,
+`created_at`, and `harness_argv` are accepted and ignored — regenerated
+per run. Only `task`, `adapter`, `[budget]`, and `workers` are read
+(ADR-0003).
 
 ```toml
 # lunchbox.lock
@@ -318,7 +325,13 @@ workdir/
     scout/
 ```
 
-MVP may mount the union at `workdir/` and let Path B pass different `--skill` subsets. Prefer per-pack subdirs as soon as two workers need different menus, so a child cannot discover a sibling’s Skills by walking `..`.
+Resolved 2026-09-06 (ADR-0003): `start --from` runs always mount per-worker
+packs at `workdir/packs/<worker>/` — single-worker manifests included.
+`workers[0]` is the parent; its pack is the Path A scan root, and
+`workers[1..]` become run-local agents (§14). The CLI `--skill` form keeps
+the flat union at `workdir/` (the MVP layout above), so a child cannot
+discover a sibling's Skills by walking `..`: each pack directory contains
+exactly that worker's skills.
 
 ---
 
@@ -428,6 +441,22 @@ When the run ends, those files die with the run dir.
 
 If the harness cannot load agents from an arbitrary directory, Path B is “print the files and the one-line include snippet” rather than silent mutation. Never leave a standing agent pointing at a deleted mount.
 
+Mechanism resolved 2026-09-06 (ADR-0003; probed against pi 0.84.4 and omp
+18.1.11): neither harness can load agents from a run-local directory for one
+invocation. pi-subagents discovers only from builtin/package/user
+(`~/.pi/agent/agents`)/project (`.pi/agents`) scopes — no env var, flag, or
+settings key adds a directory. omp's task-agent frontmatter is
+name/description/tools(/spawns/model/thinkingLevel/output) with no skills
+field, its settings schema has no `agents.*` keys, `--add-dir` adds a
+*workspace* directory, and relocating `PI_CODING_AGENT_DIR` orphans
+models/secrets so the child cannot run at all. Both adapters therefore ship
+the print fallback: lunchbox writes `runs/<id>/agents/<worker>.md`
+(pi-subagents frontmatter for pi; omp format with the body naming the pack
+dir for omp), prints an include hint, records `loaded: false` in the audit,
+and never writes a standing agent dir. `adapters --explain` pins the probe
+results; if a future harness gains a per-invocation agent-dir override, a new
+ADR can flip that adapter to Loaded mode.
+
 ---
 
 ## 15. Script execution
@@ -488,6 +517,13 @@ Also:
 ```text
 lunchbox start --from manifest.toml
 ```
+
+`--from` rules (ADR-0003): `--skill` and `--from` are mutually exclusive —
+pins belong in the manifest workers; `--adapter`/`--task` flags win over the
+manifest's fields; manifest `[budget] max_menu_tokens` wins over config; the
+supplied manifest's `run_id`/`created_at`/`harness_argv` are regenerated.
+Invalid manifests (unknown key, schema ≠ 1, no workers, duplicate worker
+name, empty pack) fail closed with no run dir left behind.
 
 Output (human):
 
@@ -559,6 +595,7 @@ Fail closed. No silent fallback to “just start Pi with defaults.”
 ```json
 {"ts":"2026-09-05T15:30:12Z","run_id":"lbx_…","event":"resolved","skills":[{"name":"code-review","hash":"sha256:6f2c…"}]}
 {"ts":"…","event":"mounted","mode":"symlink","workdir":"…"}
+{"ts":"…","event":"agents","adapter":"pi","files":["reviewer.md"],"loaded":false}
 {"ts":"…","event":"spawn","adapter":"pi","argv":["pi","--no-skills","--skill","…"]}
 {"ts":"…","event":"unmounted","reason":"finish"}
 ```
@@ -590,8 +627,8 @@ skill_dirs() -> global + project paths for doctor
 isolation_argv(run_dir, workdir, pack, user_argv) -> full argv | error (omp writes its per-run --config overlay into run_dir here)
 isolation_summary() -> one-line isolation label for start's summary
 agent_dir_hint() -> where standing agents live (never write here)
-write_run_agents(run_dir, workers, pack_dirs) -> files written for Path B
-selftest() -> isolation flags still exist
+write_run_agents(run_dir, agents) -> AgentFiles   # Path B: &[AgentSpec{name, description, pack_dir, skills}] -> {loaded: bool, files: Vec<PathBuf>, include_hint: Option<String>}
+selftest(version) -> isolation flags still exist
 explain() -> human text of what we believe about this harness
 ```
 
@@ -740,7 +777,7 @@ Do not start with adapters. Do not start with Path B. Core before TUI; TUI befor
 - Two-layer merge algebra beyond "project wins / `deny` unions": `allow` and `library_paths` precedence. Specify when the config module is designed.
 - Token estimator: chars/4 vs a small BPE later.
 - Should `without_menu_tokens` include built-in harness skills we cannot see? v1: only filesystem dirs we scan.
-- Multi-pack workdir (`workdir/packs/<worker>`) vs union + argv subset. Prefer packs as soon as Path B lands.
+- Resolved 2026-09-06: multi-pack workdir — `--from` runs always mount `workdir/packs/<worker>/`, the CLI `--skill` form keeps the flat union (ADR-0003; recorded in §11).
 
 ---
 

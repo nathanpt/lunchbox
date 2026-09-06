@@ -1,18 +1,74 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-06 (README + Omp Path A milestone)
+Last updated: 2026-09-06 (Path B milestone)
 
 ## Current repository state
 
-v1 complete. Phase 1 + TUI milestone + two simplify passes + the README /
-Omp milestone: core CLI, Pi **and Omp** Path A adapters, the four v1 TUI
-screens behind cargo features, and the DESIGN §25 README. 84 unit + 22
-integration tests green in the default configuration, 69 + 22 with
-`--no-default-features`, zero warnings in both. **Features 001–010 all
+v1 + Path B complete. Phase 1 + TUI milestone + two simplify passes + the
+README/Omp milestone + the Path B milestone: core CLI, Pi and Omp Path A
+adapters, the four v1 TUI screens behind cargo features, the DESIGN §25
+README, `--from manifest.toml` multi-worker runs with per-worker packs, and
+Path B run-local agent files (print mode, both adapters). 98 unit + 26
+integration tests green in the default configuration, 83 + 26 with
+`--no-default-features`, zero warnings in both. **Features 001–012 all
 pass.** Branch `main`; tree clean after each phase commit.
 
-Next (DESIGN §22 "Next"): Path B run-local agents, `--from` multi-worker
-manifests, scan-command hook, `skills/lunchbox/` driver Skill.
+Next (DESIGN §22 "Next"): scan-command hook, `skills/lunchbox/` driver
+Skill.
+
+## Path B milestone verification (2026-09-06, this machine)
+
+Exec-plan: `docs/exec-plans/completed/path-b-milestone.md`; decisions in
+ADR-0003 (`docs/decisions/0003-path-b-packs-and-from-semantics.md`).
+
+**Omp task-agent probe (outcome: NO override exists → print mode).**
+omp 18.1.11. `omp agents unpack --dir` exports five bundled agents whose
+frontmatter is name/description/tools(/spawns/model/thinkingLevel/output) —
+no skills or skillPath field. Observer = headless
+`omp -p --no-session --no-title --max-time 60 'List the names of your
+available task agents. Names only.'`; control listed exactly scout,
+reviewer, security-reviewer, task, sonic. V1 overlay
+`agents.customDirectories` via `--config`: ignored (marker-agent absent) —
+and the binary's full dotted settings-key schema enumeration contains no
+`agents.*` key at all. V2 (strings-discovered `PI_CODING_AGENT_DIR`): the
+env var relocates the whole agent state root, not just agents — the child
+dies with "No models available" because models.db/secrets live under the
+real `~/.omp/agent` (and it would fork sessions into a gc-eligible run
+dir). V3 `--add-dir`: adds a *workspace* directory (omp --help), not an
+agent discovery scope — non-starter. Scratch: `/tmp/lbx-agents-probe/`.
+Both adapters therefore ship DESIGN §14's print fallback; `adapters
+--explain` pins the probe result and date.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 98 unit + 26 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 83 unit + 26 integration, 0 failed, 0 warnings |
+| feature-011 happy path | `start --from $TMP/m.toml --library testdata/skills --adapter none --json` (parent=[demo-review], reviewer=[demo-scan]) | exit 0; `workers` = `[{"name":"parent","menu_tokens":14},{"name":"reviewer","menu_tokens":13}]`; `packs/parent/demo-review` + `packs/reviewer/demo-scan` present, workdir root holds only `packs/`; lock per-skill `workers` exact (`["parent"]` / `["reviewer"]`), lock workdir = run workdir root; `why` prints both `worker parent:` and `worker reviewer:` lines; `finish` → workdir+agents gone, `result.json` `unmounted: true` (integration test `from_manifest_mounts_per_worker_packs`) |
+| feature-011 fail-closed | schema 2 / unknown key / dup worker / empty pack / no workers / `--skill`+`--from` / missing file | each non-zero with the pinned stderr (`manifest schema 2 not supported (expected 1)`, `failed to parse manifest`, `duplicate worker name 'w' in manifest`, `worker 'w' has an empty pack`, `manifest has no workers`, `--skill and --from are mutually exclusive…`, `manifest '<path>' not found`); `~/.lunchbox/runs` empty after all (integration test `from_manifest_rejects_invalid`) |
+| feature-011 budget | manifest `[budget] max_menu_tokens = 10` + project `lunchbox.toml` `fail_on_budget = true` | `worker 'parent': menu_tokens 14 exceeds max_menu_tokens 10 (fail_on_budget = true)`, exit 1, no run dir; soft path warns per worker and proceeds; manifest budget wins over config and is recorded (unit tests `budget_*`) |
+| feature-011 spawn | mock-pi, `start --from … --adapter pi --no-wait -- -- pi -p hi` | audit spawn argv = `["pi","--no-skills","--skill","<run>/workdir/packs/parent/demo-review","pi","-p","hi"]` — only the parent's pack member; abort cleans (integration test `from_manifest_spawn_uses_parent_pack`) |
+| feature-012 pi | same manifest, `--adapter pi --dry-run` | `agents/reviewer.md` exactly per DESIGN §14 (`inheritSkills: false`, `skillPath: …/packs/reviewer`, `skills: demo-scan`, `tools: read, grep, find, bash`); stdout `agents 1 run-local (printed; not auto-loaded)` + `note` include hint; audit `{"event":"agents","adapter":"pi","files":["reviewer.md"],"loaded":false}`; `finish` removes `agents/` (integration test `from_manifest_pi_prints_agents`) |
+| feature-012 omp (print mode) | same manifest, `--adapter omp --no-wait` (mock + real binary dry-run) | omp-format `agents/reviewer.md` (name/description/tools frontmatter, body names the pack dir); overlay stays skills-only pointing at `packs/parent`; audit agents event `loaded:false`; printed-mode line + omp include hint; abort/finish clean (integration test `omp_manifest_overlay_and_agents`) |
+| Standing trees | sha256 of `~/.pi/agent`, `~/.omp/agent/{agents,skills}` before/after pi+omp Path B runs | byte-identical; `~/.pi/agent/agents` and `~/.omp/agent/agents` absent before and after. Whole-`~/.omp/agent` hashing is not a stable oracle on this machine (omp's own `models.db-wal`/`terminal-sessions`/composer caches churn independently of lunchbox), so the guarantee is asserted on the subtrees DESIGN §20.2 protects |
+| No drift (CLI form) | `start --library testdata/skills --skill demo-review --skill demo-scan --adapter none` | identical README-snippet output (`menu_tokens    this run: 27`), flat `workdir/<skill>` layout, `packs/` absent; `adapters` rows unchanged |
+| TD-002 | `prepare_run`/`PreparedRun` moved to `src/run/`; picker imports `crate::run::` | paid; tracker row removed; ARCHITECTURE.md aligned |
+| TD-003 | `selftest(version: Option<&str>)`; `cmd_adapters` passes its detection down | paid; tracker row removed; one `--version` spawn per present harness |
+
+Deviations from the exec-plan, all recorded here: the agents write in
+`start_run` runs *before* the summary/json print (not after) so the json
+object can carry the `agents` key the plan also requires — audit order still
+resolved → mounted → agents → spawn per DESIGN §18; worker packs are
+normalized to resolved names after resolve (a hash pin in a pack would
+otherwise miss its locked name in `mount_packs`/`build_lock`, and the
+generated manifest records resolved names exactly as the CLI form always
+did); the budget check ran with cap 10 instead of the plan's illustrative
+1500 (the demo pantry's packs are 14/13 tokens, so 1500 cannot trip);
+`start --json` also gained a `workers` key for CLI-form runs (single
+`default` entry) per the plan's additive-json note, pinned by
+`start_json_reports_numbers`; omp's generated agent file is omp-native
+format (the probed format has no skills field — the plan's pi template is
+not reused for omp, per its contingency; the exact generated file is
+asserted in `omp_manifest_overlay_and_agents` and shown in the table above).
 
 ## v1 exit bar walkthrough (feature-008, 2026-09-06)
 
@@ -216,7 +272,9 @@ None in flight.
 
 ## Next useful move
 
-Path B run-local agents (DESIGN §23 step 11): `write_run_agents` still
-bails "Path B not implemented in this build" in all three adapters;
-`--from` still refused. Scope it as its own milestone per DESIGN §14,
-including the `workdir/packs/<worker>` layout decision (§24).
+Scan-command hook (DESIGN §22 "Next", §17 policy gate): `resolve` currently
+fail-closes when `scan_command` is configured; wire the optional external
+scanner into the gate with a non-zero exit failing the run, or the
+`skills/lunchbox/` driver Skill. Both adapters' Path B is print mode until a
+harness grows a per-invocation agent-dir override (ADR-0003 records the
+flip condition).

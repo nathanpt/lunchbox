@@ -1,6 +1,6 @@
 use super::Adapter;
 use crate::config::Config;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -53,15 +53,38 @@ impl Adapter for PiAdapter {
         env::var_os("HOME").map(|home| PathBuf::from(home).join(".pi").join("agent"))
     }
 
-    fn write_run_agents(&self, _run_dir: &Path) -> Result<()> {
-        bail!("Path B not implemented in this build")
+    fn write_run_agents(
+        &self,
+        run_dir: &Path,
+        agents: &[super::AgentSpec],
+    ) -> Result<super::AgentFiles> {
+        let dir = run_dir.join("agents");
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create {}", dir.display()))?;
+        let mut files = Vec::new();
+        for spec in agents {
+            let path = dir.join(format!("{}.md", spec.name));
+            std::fs::write(&path, agent_md(spec))
+                .with_context(|| format!("failed to write {}", path.display()))?;
+            files.push(path);
+        }
+        Ok(super::AgentFiles {
+            loaded: false,
+            files,
+            include_hint: Some(
+                "pi-subagents discovers agents only from ~/.pi/agent/agents and the project's \
+                 .pi/agents; lunchbox never writes those — copy runs/<run_id>/agents/*.md into \
+                 one of them for this session; they must not outlive the run"
+                    .to_string(),
+            ),
+        })
     }
 
-    fn selftest(&self) -> Result<super::SelftestOutcome> {
-        let Some(version) = self.detect()? else {
+    fn selftest(&self, version: Option<&str>) -> Result<super::SelftestOutcome> {
+        let Some(version) = version else {
             return Ok(super::SelftestOutcome::Skipped);
         };
-        super::help_flag_selftest("pi", &version, &["--no-skills", "--skill"])
+        super::help_flag_selftest("pi", version, &["--no-skills", "--skill"])
     }
 
     fn explain(&self) -> String {
@@ -69,7 +92,22 @@ impl Adapter for PiAdapter {
 flag per locked package, followed by the user argv. Discovery of ~/.claude/skills, \
 ~/.agents/skills, and settings overlays is disabled by --no-skills; only the sealed \
 workdir is passed. Flags only, no settings overlay. Belief verified against pi --help \
-0.84.4 on 2026-09-06; selftest re-verifies."
+0.84.4 on 2026-09-06; selftest re-verifies. Path B: writes \
+runs/<id>/agents/<worker>.md with inheritSkills false, skillPath -> the worker's \
+pack, explicit skills; pi-subagents (probed 2026-09-06 on 0.84.4) has no \
+per-invocation agent-dir override, so the files are printed, not auto-loaded."
             .to_string()
     }
+}
+
+fn agent_md(spec: &super::AgentSpec) -> String {
+    format!(
+        "---\nname: {}\ndescription: {}\ninheritSkills: false\nskillPath: {}\nskills: {}\ntools: \
+         read, grep, find, bash\n---\nWork only with the Skills in your skillPath. Do not \
+         search ~/.agents/skills or any global skill directory.\n",
+        spec.name,
+        spec.description,
+        spec.pack_dir.display(),
+        spec.skills.join(", ")
+    )
 }

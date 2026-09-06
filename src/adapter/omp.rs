@@ -1,6 +1,6 @@
 use super::Adapter;
 use crate::config::Config;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -73,15 +73,38 @@ impl Adapter for OmpAdapter {
         "path A config overlay: --config <run>/omp-config.yml"
     }
 
-    fn write_run_agents(&self, _run_dir: &Path) -> Result<()> {
-        bail!("Path B not implemented in this build")
+    fn write_run_agents(
+        &self,
+        run_dir: &Path,
+        agents: &[super::AgentSpec],
+    ) -> Result<super::AgentFiles> {
+        let dir = run_dir.join("agents");
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create {}", dir.display()))?;
+        let mut files = Vec::new();
+        for spec in agents {
+            let path = dir.join(format!("{}.md", spec.name));
+            std::fs::write(&path, agent_md(spec))
+                .with_context(|| format!("failed to write {}", path.display()))?;
+            files.push(path);
+        }
+        Ok(super::AgentFiles {
+            loaded: false,
+            files,
+            include_hint: Some(
+                "omp discovers task agents only from ~/.omp/agent/agents and ./.omp/agents; \
+                 lunchbox never writes those — copy runs/<run_id>/agents/*.md into one of \
+                 them for this session"
+                    .to_string(),
+            ),
+        })
     }
 
-    fn selftest(&self) -> Result<super::SelftestOutcome> {
-        let Some(version) = self.detect()? else {
+    fn selftest(&self, version: Option<&str>) -> Result<super::SelftestOutcome> {
+        let Some(version) = version else {
             return Ok(super::SelftestOutcome::Skipped);
         };
-        super::help_flag_selftest("omp", &version, &["--config"])
+        super::help_flag_selftest("omp", version, &["--config"])
     }
 
     fn explain(&self) -> String {
@@ -96,7 +119,27 @@ session state, not skill discovery. Belief verified against omp 18.1.11 on 2026-
 headless `omp -p` probe: the reply listed exactly the mounted marker skill, the five \
 foreign pantry skills appeared without the overlay and were absent with it. Selftest \
 re-verifies the deterministic part only (omp --help still offers --config); the live \
-probe is not repeated per run."
+probe is not repeated per run. Path B (print mode): writes runs/<id>/agents/<worker>.md \
+in the omp task-agent format (name/description/tools frontmatter from `omp agents \
+unpack`; the body names the worker's pack dir — omp agent files carry no skills field). \
+No per-invocation agents-dir override exists in omp 18.1.11 (probed 2026-09-06): \
+`agents.customDirectories` is not a settings key (the config schema has no agents.* \
+entries), `--add-dir` only adds a workspace directory, and relocating \
+PI_CODING_AGENT_DIR orphans models/secrets so the child cannot run at all — the files \
+are printed with an include hint, never auto-loaded."
             .to_string()
     }
+}
+
+fn agent_md(spec: &super::AgentSpec) -> String {
+    format!(
+        "---\nname: {}\ndescription: {}\ntools:\n  - read\n  - grep\n  - glob\n  - bash\n---\n\
+         You are a Lunchbox run-local agent for this run only. Work only with the Skill \
+         packages under {} ({}). Do not search ~/.agents/skills, ~/.omp/agent/skills, or \
+         any global skill directory.\n",
+        spec.name,
+        spec.description,
+        spec.pack_dir.display(),
+        spec.skills.join(", ")
+    )
 }

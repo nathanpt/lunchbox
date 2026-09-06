@@ -13,8 +13,7 @@ use adapter::{Adapter, SelftestOutcome};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use config::Config;
-use resolve::Locked;
-use run::{Manifest, Outcome};
+use run::{Manifest, Outcome, PreparedRun};
 use serde_json::json;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -346,28 +345,58 @@ fn tui_policy(json: bool) -> Result<ExitCode> {
 }
 
 fn cmd_start(args: StartArgs) -> Result<ExitCode> {
-    if let Some(_from) = &args.from {
-        bail!("manifest-driven multi-worker runs arrive with Path B");
-    }
     let cfg = Config::load()?;
-    let adapter_name = args
-        .adapter
-        .clone()
-        .unwrap_or_else(|| cfg.default_adapter.clone());
-    let adapter = adapter::resolve_adapter(&adapter_name)?;
     let mut harness_argv = args.harness_argv.clone();
     if harness_argv.first().map(String::as_str) == Some("--") {
         harness_argv.remove(0);
     }
     let libraries: Vec<PathBuf> = args.libraries.iter().map(PathBuf::from).collect();
+    let (adapter_name, task, max_menu_tokens, workers, use_packs) = match &args.from {
+        Some(from) => {
+            if !args.skills.is_empty() {
+                bail!("--skill and --from are mutually exclusive; put pins in the manifest workers");
+            }
+            let parsed = run::read_manifest_input(Path::new(from))?;
+            let input = parsed.validate()?;
+            (
+                args.adapter
+                    .clone()
+                    .unwrap_or_else(|| input.adapter.clone()),
+                args.task.clone().unwrap_or_else(|| input.task.clone()),
+                input
+                    .budget
+                    .as_ref()
+                    .map(|b| b.max_menu_tokens)
+                    .unwrap_or(cfg.max_menu_tokens),
+                input.workers.clone(),
+                true,
+            )
+        }
+        None => (
+            args.adapter
+                .clone()
+                .unwrap_or_else(|| cfg.default_adapter.clone()),
+            args.task.clone().unwrap_or_default(),
+            cfg.max_menu_tokens,
+            vec![run::Worker {
+                name: "default".to_string(),
+                pack: args.skills.clone(),
+                description: None,
+            }],
+            false,
+        ),
+    };
+    let adapter = adapter::resolve_adapter(&adapter_name)?;
     let mut signals = Signals::new([SIGINT, SIGTERM])?;
-    let prepared = prepare_run(
+    let prepared = run::prepare_run(
         &cfg,
         &adapter_name,
-        args.task.as_deref().unwrap_or(""),
-        &args.skills,
+        &task,
+        workers,
+        max_menu_tokens,
         &libraries,
         &harness_argv,
+        use_packs,
     )?;
     let run_dir = prepared.run_dir.clone();
     let outcome = start_run(
@@ -389,93 +418,6 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
     }
 }
 
-pub struct PreparedRun {
-    pub run_id: String,
-    pub run_dir: PathBuf,
-    pub workdir: PathBuf,
-    pub locked: Vec<Locked>,
-    pub mount_mode: config::MountMode,
-    pub menu_tokens: u64,
-    pub without_tokens: u64,
-    pub without_skills: usize,
-}
-
-pub fn prepare_run(
-    cfg: &Config,
-    adapter_name: &str,
-    task: &str,
-    pins: &[String],
-    libraries: &[PathBuf],
-    harness_argv: &[String],
-) -> Result<PreparedRun> {
-    let locked = resolve::resolve(pins, cfg, libraries)?;
-    let run_id = run::new_run_id()?;
-    let run_dir = cfg.runs_dir.join(&run_id);
-    let prepared = mount_run(cfg, adapter_name, task, &locked, &run_id, &run_dir, harness_argv);
-    match prepared {
-        Ok(prepared) => Ok(prepared),
-        Err(error) => {
-            if run_dir.exists() {
-                let _ = std::fs::remove_dir_all(&run_dir);
-            }
-            Err(error)
-        }
-    }
-}
-
-fn mount_run(
-    cfg: &Config,
-    adapter_name: &str,
-    task: &str,
-    locked: &[Locked],
-    run_id: &str,
-    run_dir: &Path,
-    harness_argv: &[String],
-) -> Result<PreparedRun> {
-    let workdir = run_dir.join("workdir");
-    std::fs::create_dir_all(run_dir)
-        .with_context(|| format!("failed to create run dir {}", run_dir.display()))?;
-    let skill_names: Vec<String> = locked.iter().map(|s| s.name.clone()).collect();
-    let manifest = run::build_manifest(
-        run_id,
-        task,
-        adapter_name,
-        harness_argv,
-        cfg.max_menu_tokens,
-        &skill_names,
-    );
-    run::write_manifest(run_dir, &manifest)?;
-    let mount_mode = mount::mount(locked, &workdir, cfg.mount_mode)?;
-    let lock = run::build_lock(run_id, mount_mode.as_str(), &workdir, locked);
-    run::write_lock(run_dir, &lock)?;
-    let adapter = adapter::resolve_adapter(adapter_name)?;
-    let (without_tokens, without_skills) = adapter::union_menu(adapter.as_ref(), cfg);
-    let menu_tokens: u64 = locked.iter().map(|s| s.description_tokens).sum();
-    run::append_audit(
-        run_dir,
-        run_id,
-        json!({
-            "event": "resolved",
-            "skills": locked.iter().map(|s| json!({"name": s.name, "hash": s.hash})).collect::<Vec<_>>(),
-        }),
-    )?;
-    run::append_audit(
-        run_dir,
-        run_id,
-        json!({"event": "mounted", "mode": mount_mode.as_str(), "workdir": workdir}),
-    )?;
-    Ok(PreparedRun {
-        run_id: run_id.to_string(),
-        run_dir: run_dir.to_path_buf(),
-        workdir,
-        locked: locked.to_vec(),
-        mount_mode,
-        menu_tokens,
-        without_tokens,
-        without_skills: without_skills.len(),
-    })
-}
-
 fn start_run(
     args: &StartArgs,
     cfg: &Config,
@@ -485,7 +427,7 @@ fn start_run(
     signals: &mut Signals,
 ) -> Result<ExitCode> {
     let adapter_name = adapter.name();
-    let PreparedRun {
+    let run::PreparedRun {
         run_id,
         run_dir,
         workdir,
@@ -494,22 +436,56 @@ fn start_run(
         menu_tokens,
         without_tokens,
         without_skills,
+        workers,
+        worker_tokens,
+        packs_layout,
+        parent_pack,
     } = prepared;
     let run_dir = run_dir.as_path();
     let workdir = workdir.as_path();
-    let skill_names: Vec<String> = locked.iter().map(|s| s.name.clone()).collect();
+    let parent_skills: Vec<String> = workers[0].pack.clone();
 
     if let Some(signal) = signals.pending().next() {
         let _ = std::fs::remove_dir_all(run_dir);
         return Ok(ExitCode::from(signal_exit_code(signal)));
     }
 
+    let agent_files = if workers.len() > 1 {
+        let specs: Vec<adapter::AgentSpec> = workers[1..]
+            .iter()
+            .map(|worker| adapter::AgentSpec {
+                name: worker.name.clone(),
+                description: worker.description.clone().unwrap_or_else(|| {
+                    format!("Lunchbox run-local agent for worker {}", worker.name)
+                }),
+                pack_dir: workdir.join("packs").join(&worker.name),
+                skills: worker.pack.clone(),
+            })
+            .collect();
+        let files = adapter.write_run_agents(run_dir, &specs)?;
+        if !files.files.is_empty() {
+            run::append_audit(
+                run_dir,
+                &run_id,
+                json!({
+                    "event": "agents",
+                    "adapter": adapter_name,
+                    "files": files.files.iter().map(|f| f.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                    "loaded": files.loaded,
+                }),
+            )?;
+        }
+        Some(files)
+    } else {
+        None
+    };
+
     let pins: Vec<String> = locked
         .iter()
         .map(|s| format!("{}@{}", s.name, s.hash))
         .collect();
     if args.json {
-        let output = json!({
+        let mut output = json!({
             "run_id": run_id,
             "workdir": workdir,
             "skills": locked.iter().map(|s| json!({"name": s.name, "hash": s.hash})).collect::<Vec<_>>(),
@@ -517,7 +493,14 @@ fn start_run(
             "without_menu_tokens": without_tokens,
             "adapter": adapter_name,
             "mount_mode": mount_mode.as_str(),
+            "workers": worker_tokens.iter().map(|w| json!({"name": w.name, "menu_tokens": w.menu_tokens})).collect::<Vec<_>>(),
         });
+        if let Some(files) = &agent_files {
+            output["agents"] = json!({
+                "files": files.files.iter().map(|f| f.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                "loaded": files.loaded,
+            });
+        }
         println!("{output}");
     } else {
         println!("run            {run_id}");
@@ -530,6 +513,19 @@ fn start_run(
             println!("without        ~{without_tokens}  ({without_skills} skills on {adapter_name} global+project)");
         }
         println!("isolation      {}", adapter.isolation_summary());
+        if let Some(files) = &agent_files {
+            if !files.files.is_empty() {
+                let state = if files.loaded {
+                    format!(", loaded by {adapter_name}")
+                } else {
+                    " (printed; not auto-loaded)".to_string()
+                };
+                println!("agents         {} run-local{}", files.files.len(), state);
+                if let Some(hint) = &files.include_hint {
+                    println!("note           {hint}");
+                }
+            }
+        }
         println!("unmount        run lunchbox finish {run_id}   (auto on --wait exit)");
     }
 
@@ -537,7 +533,8 @@ fn start_run(
         return Ok(ExitCode::SUCCESS);
     }
 
-    let argv = adapter.isolation_argv(run_dir, workdir, &skill_names, harness_argv)?;
+    let scan_root: &Path = if packs_layout { &parent_pack } else { workdir };
+    let argv = adapter.isolation_argv(run_dir, scan_root, &parent_skills, harness_argv)?;
     if args.dry_run {
         for token in &argv {
             println!("{}", shell_quote(token));
@@ -735,11 +732,12 @@ fn cmd_adapters(explain: bool) -> Result<ExitCode> {
     for name in adapter::ADAPTERS {
         let adapter = adapter::resolve_adapter(name)?;
         let version = adapter.detect()?;
-        let selftest = adapter.selftest()?;
+        let selftest = adapter.selftest(version.as_deref());
         let version_text = match &version {
             Some(version) => version.clone(),
             None => "not found".to_string(),
         };
+        let selftest = selftest?;
         let selftest_text = match &selftest {
             SelftestOutcome::Ok => "selftest: ok".to_string(),
             SelftestOutcome::Skipped => format!("{name} not found; selftest skipped"),

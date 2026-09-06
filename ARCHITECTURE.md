@@ -40,14 +40,20 @@ argv → config (two-layer merge) → resolve (pins → Locked)
 - `src/resolve/` — pin expansion and the policy gates (hash match, deny,
   allow, missing `SKILL.md`, scan hook refusal, token budget) in DESIGN
   §10 order. Fail closed.
-- `src/mount/` — symlink per package into `workdir/<name>`; any symlink
-  failure switches the whole run to uniform copy mode; copy mode rejects
-  symlink escapes outside the package root.
-- `src/run/` — run ids, manifest/lock/audit/result schemas, `flock`-guarded
-  idempotent teardown, status/gc/latest-run discovery.
+- `src/mount/` — symlink per package into `workdir/<name>` (CLI form) or per
+  worker into `workdir/packs/<worker>/<name>` (`--from` form, ADR-0003); any
+  symlink failure switches the whole run to uniform copy mode; copy mode
+  rejects symlink escapes outside the package root.
+- `src/run/` — run ids, manifest/lock/audit/result schemas, run
+  orchestration (`prepare_run`: worker-union pin resolution, per-worker
+  budget gate, flat-union or `packs/<worker>` mount per ADR-0003),
+  `flock`-guarded idempotent teardown, status/gc/latest-run discovery.
 - `src/adapter/` — the DESIGN §19 trait; `none` (mount-only), `pi` (Path A:
-  `--no-skills` + one `--skill` per package), and `omp` (Path A: per-run
-  `--config` overlay pinning `skills.customDirectories` to the workdir).
+  `--no-skills` + one `--skill` per package; Path B: pi-subagents-shaped
+  run-local agent files, printed not loaded), and `omp` (Path A: per-run
+  `--config` overlay pinning `skills.customDirectories` to the parent pack;
+  Path B: omp-format agent files, printed not loaded — probed 2026-09-06,
+  no per-invocation agents-dir override exists).
 - Pure decision logic (merge algebra, pin parsing, frontmatter parsing,
   token estimation, tree hashing) is unit-tested without side effects;
   lifecycle behavior is exercised through the real binary in `tests/cli.rs`

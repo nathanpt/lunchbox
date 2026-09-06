@@ -36,11 +36,19 @@ impl Adapter for NoneAdapter {
         None
     }
 
-    fn write_run_agents(&self, _run_dir: &Path) -> Result<()> {
-        bail!("Path B not implemented in this build")
+    fn write_run_agents(
+        &self,
+        _run_dir: &Path,
+        _agents: &[super::AgentSpec],
+    ) -> Result<super::AgentFiles> {
+        Ok(super::AgentFiles {
+            loaded: false,
+            files: Vec::new(),
+            include_hint: None,
+        })
     }
 
-    fn selftest(&self) -> Result<super::SelftestOutcome> {
+    fn selftest(&self, _version: Option<&str>) -> Result<super::SelftestOutcome> {
         Ok(super::SelftestOutcome::Ok)
     }
 

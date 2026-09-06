@@ -11,9 +11,11 @@ sees only the locked Skills for that job. `docs/design-docs/DESIGN.md` is
 the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
-- Current phase: v1 complete (features 001–010 all passing) — core MVP,
-  Pi + Omp Path A adapters, the four TUI screens, and the README
-  (DESIGN §22/§25). Next: Path B run-local agents (DESIGN §23 step 11).
+- Current phase: v1 + Path B complete (features 001–012 all passing) — core
+  MVP, Pi + Omp Path A adapters, the four TUI screens, the README (DESIGN
+  §22/§25), and `--from` multi-worker runs with run-local agent files
+  (DESIGN §14 print mode, ADR-0003). Next: scan-command hook,
+  `skills/lunchbox/` driver Skill (DESIGN §22 "Next").
 - Language/runtime: Rust, unconditional —
   `docs/decisions/0001-rust-unconditional.md` (ADR-0001).
 

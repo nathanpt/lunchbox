@@ -88,7 +88,6 @@ pub fn resolve(pins: &[String], cfg: &Config, roots_extra: &[PathBuf]) -> Result
             description_tokens: tokens,
         });
     }
-    enforce_budget(locked.iter().map(|l| l.description_tokens).sum(), cfg)?;
     Ok(locked)
 }
 
@@ -163,19 +162,33 @@ struct Expanded {
     description: String,
 }
 
-fn enforce_budget(menu_tokens: u64, cfg: &Config) -> anyhow::Result<()> {
-    if menu_tokens > cfg.max_menu_tokens {
-        if cfg.fail_on_budget {
-            bail!(
-                "menu_tokens {} exceeds max_menu_tokens {} (fail_on_budget = true)",
-                menu_tokens,
-                cfg.max_menu_tokens
+pub fn enforce_worker_budget(
+    workers: &[crate::run::Worker],
+    locked: &[Locked],
+    max_menu_tokens: u64,
+    fail_on_budget: bool,
+) -> Result<()> {
+    for worker in workers {
+        let menu_tokens: u64 = worker
+            .pack
+            .iter()
+            .filter_map(|name| locked.iter().find(|l| &l.name == name))
+            .map(|l| l.description_tokens)
+            .sum();
+        if menu_tokens > max_menu_tokens {
+            if fail_on_budget {
+                bail!(
+                    "worker '{}': menu_tokens {} exceeds max_menu_tokens {} (fail_on_budget = true)",
+                    worker.name,
+                    menu_tokens,
+                    max_menu_tokens
+                );
+            }
+            eprintln!(
+                "warning: worker '{}': menu_tokens {} exceeds max_menu_tokens {} (fail_on_budget = false)",
+                worker.name, menu_tokens, max_menu_tokens
             );
         }
-        eprintln!(
-            "warning: menu_tokens {} exceeds max_menu_tokens {} (fail_on_budget = false)",
-            menu_tokens, cfg.max_menu_tokens
-        );
     }
     Ok(())
 }
@@ -352,23 +365,68 @@ mod tests {
         assert_eq!(locked.len(), 1);
     }
 
-    #[test]
-    fn budget_hard_fail() {
-        let dir = pantry();
-        let mut cfg = config_with_root(&dir.path().to_path_buf());
-        cfg.max_menu_tokens = 10;
-        cfg.fail_on_budget = true;
-        let err = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap_err().to_string();
-        assert!(err.contains("menu_tokens"), "{err}");
+    fn default_worker(pack: &[&str]) -> crate::run::Worker {
+        crate::run::Worker {
+            name: "default".to_string(),
+            pack: pins(pack),
+            description: None,
+        }
     }
 
     #[test]
-    fn budget_soft_warn_still_resolves() {
+    fn budget_hard_fail_names_the_worker() {
         let dir = pantry();
-        let mut cfg = config_with_root(&dir.path().to_path_buf());
-        cfg.max_menu_tokens = 10;
-        cfg.fail_on_budget = false;
-        assert!(resolve(&pins(&["demo-review"]), &cfg, &[]).is_ok());
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let locked = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap();
+        let workers = vec![default_worker(&["demo-review"])];
+        let err = enforce_worker_budget(&workers, &locked, 10, true)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "worker 'default': menu_tokens 14 exceeds max_menu_tokens 10 (fail_on_budget = true)"
+        );
+    }
+
+    #[test]
+    fn budget_soft_warn_per_worker_still_passes() {
+        let dir = pantry();
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let locked = resolve(&pins(&["demo-review"]), &cfg, &[]).unwrap();
+        let workers = vec![default_worker(&["demo-review"])];
+        assert!(enforce_worker_budget(&workers, &locked, 10, false).is_ok());
+    }
+
+    #[test]
+    fn budget_checks_each_worker_pack_not_the_union() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join("alpha")).unwrap();
+        fs::write(
+            dir.path().join("alpha").join("SKILL.md"),
+            "---\nname: alpha\ndescription: d\n---\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("beta")).unwrap();
+        fs::write(
+            dir.path().join("beta").join("SKILL.md"),
+            "---\nname: beta\ndescription: d\n---\n",
+        )
+        .unwrap();
+        let cfg = config_with_root(&dir.path().to_path_buf());
+        let locked = resolve(&pins(&["alpha", "beta"]), &cfg, &[]).unwrap();
+        let split: Vec<u64> = locked.iter().map(|l| l.description_tokens).collect();
+        let cap = split.iter().max().unwrap();
+        let workers = vec![
+            crate::run::Worker { name: "a".to_string(), pack: pins(&["alpha"]), description: None },
+            crate::run::Worker { name: "b".to_string(), pack: pins(&["beta"]), description: None },
+        ];
+        assert!(enforce_worker_budget(&workers, &locked, *cap, true).is_ok());
+        let union_only = vec![crate::run::Worker {
+            name: "u".to_string(),
+            pack: pins(&["alpha", "beta"]),
+            description: None,
+        }];
+        assert!(enforce_worker_budget(&union_only, &locked, *cap, true).is_err());
     }
 
     #[test]

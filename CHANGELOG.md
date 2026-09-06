@@ -75,3 +75,24 @@ edits that a user would not notice do not belong here.
   absent; `--no-skills` provably cannot substitute). `Adapter::
   isolation_argv` now takes the run dir; `adapters` lists none/pi/omp
   with a selftest that skips cleanly where omp is absent.
+
+### Added (Path B milestone)
+
+- 2026-09-06 — Features 011–012 passed. `start --from manifest.toml` runs
+  multi-worker jobs: each worker's Skills mount under
+  `workdir/packs/<worker>/` (the CLI `--skill` form keeps the flat union),
+  `workers[0]` is the parent whose pack becomes the Path A scan root, and
+  `workers[1..]` become run-local agent files under `runs/<id>/agents/` —
+  pi-subagents frontmatter for pi, omp task-agent format for omp — plus an
+  include hint, since neither harness can load agents from an arbitrary
+  directory for one invocation (probed: no `agents.*` config key in omp
+  18.1.11; no per-invocation override in pi-subagents 0.84.4). Standing
+  agent dirs are never written; teardown removes `agents/` with the
+  workdir. The token budget is now enforced per worker pack (the offending
+  worker is named in the error), the lock lists every worker sharing each
+  skill, `start --json` reports per-worker `menu_tokens` and the agents
+  outcome, and a new `agents` audit event records adapter, files, and
+  loaded true/false. Manifest input is intent only — `run_id`/`created_at`/
+  `harness_argv` regenerate per run; `--skill` + `--from` are mutually
+  exclusive; `--adapter`/`--task` flags beat manifest fields; manifest
+  `[budget]` beats config. ADR-0003 records the semantics.

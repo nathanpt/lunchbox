@@ -38,6 +38,63 @@ pub struct Budget {
 pub struct Worker {
     pub name: String,
     pub pack: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestInput {
+    pub schema: u32,
+    pub task: String,
+    pub adapter: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub harness_argv: Option<Vec<String>>,
+    #[serde(default)]
+    pub budget: Option<Budget>,
+    #[serde(default)]
+    pub workers: Vec<Worker>,
+}
+
+pub fn read_manifest_input(path: &Path) -> Result<ManifestInput> {
+    let text = fs::read_to_string(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            anyhow::anyhow!("manifest '{}' not found", path.display())
+        } else {
+ anyhow::Error::new(error).context(format!("failed to read manifest '{}'", path.display()))
+        }
+    })?;
+    toml::from_str(&text)
+        .with_context(|| format!("failed to parse manifest '{}'", path.display()))
+}
+
+impl ManifestInput {
+    pub fn validate(&self) -> Result<&Self> {
+        if self.schema != 1 {
+            bail!("manifest schema {} not supported (expected 1)", self.schema);
+        }
+        if self.workers.is_empty() {
+            bail!("manifest has no workers");
+        }
+        let mut seen: Vec<&str> = Vec::new();
+        for worker in &self.workers {
+            if seen.contains(&worker.name.as_str()) {
+                bail!("duplicate worker name '{}' in manifest", worker.name);
+            }
+            seen.push(worker.name.as_str());
+            if worker.pack.is_empty() {
+                bail!("worker '{}' has an empty pack", worker.name);
+            }
+        }
+        Ok(self)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -139,7 +196,7 @@ pub fn build_manifest(
     adapter: &str,
     harness_argv: &[String],
     max_menu_tokens: u64,
-    skill_names: &[String],
+    workers: Vec<Worker>,
 ) -> Manifest {
     Manifest {
         schema: 1,
@@ -149,10 +206,7 @@ pub fn build_manifest(
         created_at: now_iso(),
         harness_argv: harness_argv.to_vec(),
         budget: Budget { max_menu_tokens },
-        workers: vec![Worker {
-            name: "default".to_string(),
-            pack: skill_names.to_vec(),
-        }],
+        workers,
     }
 }
 
@@ -161,6 +215,7 @@ pub fn build_lock(
     mount_mode: &str,
     workdir: &Path,
     locked: &[crate::resolve::Locked],
+    workers: &[Worker],
 ) -> Lock {
     Lock {
         schema: 1,
@@ -176,10 +231,182 @@ pub fn build_lock(
                 hash: skill.hash.clone(),
                 scan: "pass".to_string(),
                 description_tokens: skill.description_tokens,
-                workers: vec!["default".to_string()],
+                workers: workers
+                    .iter()
+                    .filter(|w| w.pack.contains(&skill.name))
+                    .map(|w| w.name.clone())
+                    .collect(),
             })
             .collect(),
     }
+}
+
+pub struct WorkerTokens {
+    pub name: String,
+    pub menu_tokens: u64,
+}
+
+pub struct PreparedRun {
+    pub run_id: String,
+    pub run_dir: PathBuf,
+    pub workdir: PathBuf,
+    pub locked: Vec<crate::resolve::Locked>,
+    pub mount_mode: crate::config::MountMode,
+    pub menu_tokens: u64,
+    pub without_tokens: u64,
+    pub without_skills: usize,
+    pub workers: Vec<Worker>,
+    pub worker_tokens: Vec<WorkerTokens>,
+    pub packs_layout: bool,
+    pub parent_pack: PathBuf,
+}
+
+pub fn prepare_run(
+    cfg: &crate::config::Config,
+    adapter_name: &str,
+    task: &str,
+    workers: Vec<Worker>,
+    max_menu_tokens: u64,
+    libraries: &[PathBuf],
+    harness_argv: &[String],
+    use_packs: bool,
+) -> Result<PreparedRun> {
+    let mut pins: Vec<String> = Vec::new();
+    for worker in &workers {
+        for pin in &worker.pack {
+            if !pins.contains(pin) {
+                pins.push(pin.clone());
+            }
+        }
+    }
+    let locked = crate::resolve::resolve(&pins, cfg, libraries)?;
+    let workers = normalize_packs(workers, &locked)?;
+    crate::resolve::enforce_worker_budget(&workers, &locked, max_menu_tokens, cfg.fail_on_budget)?;
+    let run_id = new_run_id()?;
+    let run_dir = cfg.runs_dir.join(&run_id);
+    let prepared = mount_run(
+        cfg,
+        adapter_name,
+        task,
+        &locked,
+        &run_id,
+        &run_dir,
+        harness_argv,
+        &workers,
+        max_menu_tokens,
+        use_packs,
+    );
+    match prepared {
+        Ok(prepared) => Ok(prepared),
+        Err(error) => {
+            if run_dir.exists() {
+                let _ = fs::remove_dir_all(&run_dir);
+            }
+            Err(error)
+        }
+    }
+}
+
+fn normalize_packs(
+    workers: Vec<Worker>,
+    locked: &[crate::resolve::Locked],
+) -> Result<Vec<Worker>> {
+    let mut normalized = Vec::with_capacity(workers.len());
+    for mut worker in workers {
+        let mut pack: Vec<String> = Vec::new();
+        for entry in &worker.pack {
+            let name = entry.split('@').next().unwrap_or(entry);
+            let Some(skill) = locked.iter().find(|l| l.name == name) else {
+                bail!("worker '{}': skill '{}' did not resolve", worker.name, entry);
+            };
+            if !pack.contains(&skill.name) {
+                pack.push(skill.name.clone());
+            }
+        }
+        worker.pack = pack;
+        normalized.push(worker);
+    }
+    Ok(normalized)
+}
+
+fn mount_run(
+    cfg: &crate::config::Config,
+    adapter_name: &str,
+    task: &str,
+    locked: &[crate::resolve::Locked],
+    run_id: &str,
+    run_dir: &Path,
+    harness_argv: &[String],
+    workers: &[Worker],
+    max_menu_tokens: u64,
+    use_packs: bool,
+) -> Result<PreparedRun> {
+    let workdir = run_dir.join("workdir");
+    fs::create_dir_all(run_dir)
+        .with_context(|| format!("failed to create run dir {}", run_dir.display()))?;
+    let manifest = build_manifest(
+        run_id,
+        task,
+        adapter_name,
+        harness_argv,
+        max_menu_tokens,
+        workers.to_vec(),
+    );
+    write_manifest(run_dir, &manifest)?;
+    let mount_mode = if use_packs {
+        crate::mount::mount_packs(locked, &workdir.join("packs"), workers, cfg.mount_mode)?
+    } else {
+        crate::mount::mount(locked, &workdir, cfg.mount_mode)?
+    };
+    let parent_pack = if use_packs {
+        workdir.join("packs").join(&workers[0].name)
+    } else {
+        workdir.clone()
+    };
+    let lock = build_lock(run_id, mount_mode.as_str(), &workdir, locked, workers);
+    write_lock(run_dir, &lock)?;
+    let adapter = crate::adapter::resolve_adapter(adapter_name)?;
+    let (without_tokens, without_skills) = crate::adapter::union_menu(adapter.as_ref(), cfg);
+    let menu_tokens: u64 = locked.iter().map(|s| s.description_tokens).sum();
+    append_audit(
+        run_dir,
+        run_id,
+        json!({
+            "event": "resolved",
+            "skills": locked.iter().map(|s| json!({"name": s.name, "hash": s.hash})).collect::<Vec<_>>(),
+        }),
+    )?;
+    append_audit(
+        run_dir,
+        run_id,
+        json!({"event": "mounted", "mode": mount_mode.as_str(), "workdir": workdir}),
+    )?;
+    let worker_tokens = workers
+        .iter()
+        .map(|worker| WorkerTokens {
+            name: worker.name.clone(),
+            menu_tokens: worker
+                .pack
+                .iter()
+                .filter_map(|name| locked.iter().find(|l| &l.name == name))
+                .map(|l| l.description_tokens)
+                .sum(),
+        })
+        .collect();
+    Ok(PreparedRun {
+        run_id: run_id.to_string(),
+        run_dir: run_dir.to_path_buf(),
+        workdir,
+        locked: locked.to_vec(),
+        mount_mode,
+        menu_tokens,
+        without_tokens,
+        without_skills: without_skills.len(),
+        workers: workers.to_vec(),
+        worker_tokens,
+        packs_layout: use_packs,
+        parent_pack,
+    })
 }
 
 pub fn write_manifest(run_dir: &Path, manifest: &Manifest) -> Result<()> {
@@ -457,6 +684,14 @@ mod tests {
         vec![mk("alpha", 14), mk("beta", 13)]
     }
 
+    fn worker(name: &str, pack: &[&str]) -> Worker {
+        Worker {
+            name: name.to_string(),
+            pack: pack.iter().map(|s| s.to_string()).collect(),
+            description: None,
+        }
+    }
+
     #[test]
     fn run_id_shape() {
         let id = new_run_id().unwrap();
@@ -485,7 +720,7 @@ mod tests {
             "none",
             &["pi".to_string(), "-p".to_string()],
             2000,
-            &["alpha".to_string(), "beta".to_string()],
+            vec![worker("default", &["alpha", "beta"])],
         );
         write_manifest(dir.path(), &manifest).unwrap();
         let text = fs::read_to_string(dir.path().join("manifest.toml")).unwrap();
@@ -503,7 +738,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let locked = locked_pair(&dir);
         let workdir = dir.path().join("run").join("workdir");
-        let lock = build_lock("lbx_x", "symlink", &workdir, &locked);
+        let lock = build_lock("lbx_x", "symlink", &workdir, &locked, &[worker("default", &["alpha", "beta"])]);
         let run_dir = dir.path().join("run");
         fs::create_dir_all(&run_dir).unwrap();
         write_lock(&run_dir, &lock).unwrap();
@@ -525,10 +760,10 @@ mod tests {
         fs::write(workdir.join("alpha"), "x").unwrap();
         write_manifest(
             &run_dir,
-            &build_manifest("lbx_x", "task", "none", &[], 2000, &["alpha".to_string()]),
+            &build_manifest("lbx_x", "task", "none", &[], 2000, vec![worker("default", &["alpha"])]),
         )
         .unwrap();
-        write_lock(&run_dir, &build_lock("lbx_x", "symlink", &workdir, &locked)).unwrap();
+        write_lock(&run_dir, &build_lock("lbx_x", "symlink", &workdir, &locked, &[worker("default", &["alpha"])])).unwrap();
 
         teardown(&run_dir, Outcome::Ok, &crate::config::Config::default()).unwrap();
         assert!(!workdir.exists());
@@ -630,7 +865,132 @@ mod tests {
             latest_run(runs.path()).unwrap(),
             runs.path().join("lbx_20260102_000000_bb")
         );
+
         assert!(resolve_run_arg(runs.path(), None).is_ok());
         assert!(resolve_run_arg(runs.path(), Some("lbx_missing")).is_err());
+    }
+    fn write_manifest_input(dir: &TempDir, text: &str) -> std::path::PathBuf {
+        let path = dir.path().join("m.toml");
+        fs::write(&path, text).unwrap();
+        path
+    }
+
+    const VALID_INPUT: &str = r#"schema = 1
+task = "path b check"
+adapter = "none"
+
+[[workers]]
+name = "parent"
+pack = ["demo-review"]
+
+[[workers]]
+name = "reviewer"
+description = "Review specialist"
+pack = ["demo-scan"]
+"#;
+
+    #[test]
+    fn read_manifest_input_happy_path() {
+        let dir = TempDir::new().unwrap();
+        let path = write_manifest_input(&dir, VALID_INPUT);
+        let parsed = read_manifest_input(&path).unwrap();
+        let input = parsed.validate().unwrap();
+        assert_eq!(input.schema, 1);
+        assert_eq!(input.task, "path b check");
+        assert_eq!(input.workers.len(), 2);
+        assert_eq!(input.workers[0].name, "parent");
+        assert_eq!(input.workers[1].description.as_deref(), Some("Review specialist"));
+        assert_eq!(input.workers[0].description, None);
+    }
+
+    #[test]
+    fn read_manifest_input_missing_file() {
+        let err = read_manifest_input(Path::new("/nonexistent/m.toml"))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(err, "manifest '/nonexistent/m.toml' not found");
+    }
+
+    #[test]
+    fn read_manifest_input_unknown_key_fails_closed() {
+        let dir = TempDir::new().unwrap();
+        let path = write_manifest_input(&dir, "schema = 1\ntask = \"t\"\nadapter = \"none\"\nbogus = true\n\n[[workers]]\nname = \"w\"\npack = [\"a\"]\n");
+        let err = format!("{:#}", read_manifest_input(&path).unwrap_err());
+        assert!(err.contains("failed to parse manifest"), "{err}");
+        assert!(err.contains("unknown field"), "{err}");
+    }
+    #[test]
+    fn manifest_input_accepted_fields_are_ignored_not_required() {
+        let dir = TempDir::new().unwrap();
+        let path = write_manifest_input(
+            &dir,
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\nrun_id = \"lbx_old\"\ncreated_at = \"1999-01-01T00:00:00Z\"\nharness_argv = [\"pi\"]\n\n[[workers]]\nname = \"w\"\npack = [\"a\"]\n",
+        );
+        let input = read_manifest_input(&path).unwrap();
+        assert_eq!(input.run_id.as_deref(), Some("lbx_old"));
+        assert_eq!(input.harness_argv.as_deref(), Some(&["pi".to_string()][..]));
+        assert!(input.validate().is_ok());
+    }
+
+    #[test]
+    fn manifest_input_schema_mismatch() {
+        let dir = TempDir::new().unwrap();
+        let path = write_manifest_input(
+            &dir,
+            "schema = 2\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\npack = [\"a\"]\n",
+        );
+        let err = read_manifest_input(&path).unwrap().validate().unwrap_err().to_string();
+        assert_eq!(err, "manifest schema 2 not supported (expected 1)");
+    }
+
+    #[test]
+    fn manifest_input_no_workers() {
+        let dir = TempDir::new().unwrap();
+        let path = write_manifest_input(&dir, "schema = 1\ntask = \"t\"\nadapter = \"none\"\n");
+        let err = read_manifest_input(&path).unwrap().validate().unwrap_err().to_string();
+        assert_eq!(err, "manifest has no workers");
+    }
+
+    #[test]
+    fn manifest_input_duplicate_worker_name() {
+        let dir = TempDir::new().unwrap();
+        let path = write_manifest_input(
+            &dir,
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\npack = [\"a\"]\n\n[[workers]]\nname = \"w\"\npack = [\"b\"]\n",
+        );
+        let err = read_manifest_input(&path).unwrap().validate().unwrap_err().to_string();
+        assert_eq!(err, "duplicate worker name 'w' in manifest");
+    }
+
+    #[test]
+    fn manifest_input_empty_pack() {
+        let dir = TempDir::new().unwrap();
+        let path = write_manifest_input(
+            &dir,
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\npack = []\n",
+        );
+        let err = read_manifest_input(&path).unwrap().validate().unwrap_err().to_string();
+        assert_eq!(err, "worker 'w' has an empty pack");
+    }
+
+    #[test]
+    fn build_lock_maps_shared_skills_to_every_worker_in_manifest_order() {
+        let dir = TempDir::new().unwrap();
+        let locked = locked_pair(&dir);
+        let workers = vec![
+            worker("parent", &["alpha", "beta"]),
+            worker("reviewer", &["beta"]),
+        ];
+        let lock = build_lock("lbx_x", "symlink", Path::new("/w"), &locked, &workers);
+        let by_name = |name: &str| {
+            lock.skills
+                .iter()
+                .find(|s| s.name == name)
+                .unwrap_or_else(|| panic!("missing {name}"))
+                .workers
+                .clone()
+        };
+        assert_eq!(by_name("alpha"), vec!["parent".to_string()]);
+        assert_eq!(by_name("beta"), vec!["parent".to_string(), "reviewer".to_string()]);
     }
 }
