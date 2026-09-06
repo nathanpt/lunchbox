@@ -1,5 +1,5 @@
 use crate::config::Config;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -26,6 +26,24 @@ pub struct AgentFiles {
     pub loaded: bool,
     pub files: Vec<PathBuf>,
     pub include_hint: Option<String>,
+}
+
+pub(super) fn write_agent_files(
+    run_dir: &Path,
+    agents: &[AgentSpec],
+    render: impl Fn(&AgentSpec) -> String,
+) -> Result<Vec<PathBuf>> {
+    let dir = run_dir.join("agents");
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("failed to create {}", dir.display()))?;
+    let mut files = Vec::new();
+    for spec in agents {
+        let path = dir.join(format!("{}.md", spec.name));
+        std::fs::write(&path, render(spec))
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        files.push(path);
+    }
+    Ok(files)
 }
 
 pub trait Adapter {

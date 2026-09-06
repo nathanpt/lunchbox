@@ -71,11 +71,7 @@ impl PickerState {
             self.status = "select at least one skill first".to_string();
             return Action::Continue;
         }
-        let workers = vec![crate::run::Worker {
-            name: "default".to_string(),
-            pack: names,
-            description: None,
-        }];
+        let workers = vec![crate::run::Worker::default_pack(names)];
         match prepare_run(
             &self.cfg,
             "none",

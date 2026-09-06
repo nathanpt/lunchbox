@@ -1,6 +1,6 @@
 use super::Adapter;
 use crate::config::Config;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -58,16 +58,7 @@ impl Adapter for PiAdapter {
         run_dir: &Path,
         agents: &[super::AgentSpec],
     ) -> Result<super::AgentFiles> {
-        let dir = run_dir.join("agents");
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("failed to create {}", dir.display()))?;
-        let mut files = Vec::new();
-        for spec in agents {
-            let path = dir.join(format!("{}.md", spec.name));
-            std::fs::write(&path, agent_md(spec))
-                .with_context(|| format!("failed to write {}", path.display()))?;
-            files.push(path);
-        }
+        let files = super::write_agent_files(run_dir, agents, agent_md)?;
         Ok(super::AgentFiles {
             loaded: false,
             files,

@@ -70,6 +70,39 @@ format (the probed format has no skills field — the plan's pi template is
 not reused for omp, per its contingency; the exact generated file is
 asserted in `omp_manifest_overlay_and_agents` and shown in the table above).
 
+## Post-Path-B simplify pass (2026-09-06)
+
+Three-lane review (reuse / quality / efficiency) of the milestone diff
+(`1f9abbe`), 20 findings reconciled to 10 accepted. Must-fix (quality lane):
+`--from` worker names flowed unvalidated into filesystem paths —
+`name = "../../../.pi/agent/agents/backdoor"` escaped the run dir and wrote
+a standing agent dir, violating DESIGN §20.2; `validate` now rejects any
+name that is not exactly one Normal path component (regression-tested at
+unit + CLI level; escape attempt verified to fail closed with nothing
+written). Accepted cleanups: `deny_unknown_fields` on nested
+`Worker`/`Budget` (a `descritpion` typo inside `[[workers]]` was silently
+dropped); `PreparedRun.packs_layout`+`parent_pack` collapsed into one
+`scan_root` field (the old conditional re-derived what `parent_pack`
+already encoded); `Worker::menu_tokens` is now the single definition shared
+by the budget gate and `start --json` (they could silently disagree);
+`Worker::default_pack` pins the `default` worker contract at both call
+sites; `run::pack_dir` owns the `workdir/packs/<name>` convention;
+pi/omp `write_run_agents` scaffolding extracted to
+`adapter::write_agent_files` (pantry_base_dirs/help_flag_selftest
+precedent); `mount::pack_dests` unifies the symlink/copy walker and bails
+loudly on an unresolved pack entry instead of silently skipping;
+`normalize_packs` uses `resolve::parse_pin`; the duplicated agent
+file-name mapping hoisted to `agent_file_names`; the four inline
+`--from` fixtures deduplicated into `two_worker_manifest`. Rejected:
+bundling `prepare_run`/`mount_run` params into a request struct (refactor
+churn on plan-mandated signatures), an `audit_event` test helper (rejected
+by the prior simplify pass — explicit-scripts convention), and indexing
+the by-name `find` loops (quantified below the bar at workers ≤ 10 ×
+packs ≤ 50). Verified: `cargo test` (100 unit + 26 integration) and
+`cargo test --no-default-features` (85 + 26) green, zero warnings; escape
+manifest fails closed with no standing-dir write and no run dir; happy
+path, agents output, and the CLI form byte-checked unchanged.
+
 ## v1 exit bar walkthrough (feature-008, 2026-09-06)
 
 Step 1 (features 001–007 pass): proven by `cargo test` and

@@ -378,11 +378,7 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
                 .unwrap_or_else(|| cfg.default_adapter.clone()),
             args.task.clone().unwrap_or_default(),
             cfg.max_menu_tokens,
-            vec![run::Worker {
-                name: "default".to_string(),
-                pack: args.skills.clone(),
-                description: None,
-            }],
+            vec![run::Worker::default_pack(args.skills.clone())],
             false,
         ),
     };
@@ -418,6 +414,13 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
     }
 }
 
+fn agent_file_names(files: &[PathBuf]) -> Vec<String> {
+    files
+        .iter()
+        .map(|f| f.file_name().unwrap().to_string_lossy().into_owned())
+        .collect()
+}
+
 fn start_run(
     args: &StartArgs,
     cfg: &Config,
@@ -438,11 +441,11 @@ fn start_run(
         without_skills,
         workers,
         worker_tokens,
-        packs_layout,
-        parent_pack,
+        scan_root,
     } = prepared;
     let run_dir = run_dir.as_path();
     let workdir = workdir.as_path();
+    let scan_root = scan_root.as_path();
     let parent_skills: Vec<String> = workers[0].pack.clone();
 
     if let Some(signal) = signals.pending().next() {
@@ -458,7 +461,7 @@ fn start_run(
                 description: worker.description.clone().unwrap_or_else(|| {
                     format!("Lunchbox run-local agent for worker {}", worker.name)
                 }),
-                pack_dir: workdir.join("packs").join(&worker.name),
+                pack_dir: run::pack_dir(workdir, &worker.name),
                 skills: worker.pack.clone(),
             })
             .collect();
@@ -470,7 +473,7 @@ fn start_run(
                 json!({
                     "event": "agents",
                     "adapter": adapter_name,
-                    "files": files.files.iter().map(|f| f.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                    "files": agent_file_names(&files.files),
                     "loaded": files.loaded,
                 }),
             )?;
@@ -497,7 +500,7 @@ fn start_run(
         });
         if let Some(files) = &agent_files {
             output["agents"] = json!({
-                "files": files.files.iter().map(|f| f.file_name().unwrap().to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                "files": agent_file_names(&files.files),
                 "loaded": files.loaded,
             });
         }
@@ -533,7 +536,6 @@ fn start_run(
         return Ok(ExitCode::SUCCESS);
     }
 
-    let scan_root: &Path = if packs_layout { &parent_pack } else { workdir };
     let argv = adapter.isolation_argv(run_dir, scan_root, &parent_skills, harness_argv)?;
     if args.dry_run {
         for token in &argv {

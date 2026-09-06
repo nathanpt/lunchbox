@@ -3,7 +3,7 @@ use crate::resolve::Locked;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::os::unix::fs::symlink;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn mount(locked: &[Locked], workdir: &Path, mode: MountMode) -> Result<MountMode> {
     fs::create_dir_all(workdir)
@@ -47,18 +47,10 @@ pub fn mount_packs(
         }
         MountMode::Symlink => {
             let mut linked = true;
-            'worker: for worker in workers {
-                let dir = packs_root.join(&worker.name);
-                fs::create_dir_all(&dir)
-                    .with_context(|| format!("failed to create {}", dir.display()))?;
-                for name in &worker.pack {
-                    let Some(skill) = locked.iter().find(|l| &l.name == name) else {
-                        continue;
-                    };
-                    if symlink(&skill.source, &dir.join(name)).is_err() {
-                        linked = false;
-                        break 'worker;
-                    }
+            for (skill, dest) in pack_dests(locked, packs_root, workers)? {
+                if symlink(&skill.source, &dest).is_err() {
+                    linked = false;
+                    break;
                 }
             }
             if linked {
@@ -71,17 +63,36 @@ pub fn mount_packs(
     }
 }
 
-fn packs_copy_all(locked: &[Locked], packs_root: &Path, workers: &[crate::run::Worker]) -> Result<()> {
+fn pack_dests<'a>(
+    locked: &'a [Locked],
+    packs_root: &Path,
+    workers: &[crate::run::Worker],
+) -> Result<Vec<(&'a Locked, PathBuf)>> {
+    let mut dests = Vec::new();
     for worker in workers {
         let dir = packs_root.join(&worker.name);
         fs::create_dir_all(&dir)
             .with_context(|| format!("failed to create {}", dir.display()))?;
         for name in &worker.pack {
-            let Some(skill) = locked.iter().find(|l| &l.name == name) else {
-                continue;
-            };
-            copy_tree(&skill.source, &dir.join(name))?;
+            let skill = locked
+                .iter()
+                .find(|l| &l.name == name)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "worker '{}': skill '{}' did not resolve",
+                        worker.name,
+                        name
+                    )
+                })?;
+            dests.push((skill, dir.join(name)));
         }
+    }
+    Ok(dests)
+}
+
+fn packs_copy_all(locked: &[Locked], packs_root: &Path, workers: &[crate::run::Worker]) -> Result<()> {
+    for (skill, dest) in pack_dests(locked, packs_root, workers)? {
+        copy_tree(&skill.source, &dest)?;
     }
     Ok(())
 }

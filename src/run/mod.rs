@@ -30,16 +30,36 @@ pub struct Manifest {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Budget {
     pub max_menu_tokens: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Worker {
     pub name: String,
     pub pack: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+impl Worker {
+    pub fn default_pack(pack: Vec<String>) -> Self {
+        Worker {
+            name: "default".to_string(),
+            pack,
+            description: None,
+        }
+    }
+
+    pub fn menu_tokens(&self, locked: &[crate::resolve::Locked]) -> u64 {
+        self.pack
+            .iter()
+            .filter_map(|name| locked.iter().find(|l| &l.name == name))
+            .map(|l| l.description_tokens)
+            .sum()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -89,12 +109,26 @@ impl ManifestInput {
                 bail!("duplicate worker name '{}' in manifest", worker.name);
             }
             seen.push(worker.name.as_str());
+            if !is_single_component(&worker.name) {
+                bail!(
+                    "worker name '{}' must be a single path component",
+                    worker.name
+                );
+            }
             if worker.pack.is_empty() {
                 bail!("worker '{}' has an empty pack", worker.name);
             }
         }
         Ok(self)
     }
+}
+
+fn is_single_component(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(
+        components.next(),
+        Some(std::path::Component::Normal(_))
+    ) && components.next().is_none()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -257,8 +291,11 @@ pub struct PreparedRun {
     pub without_skills: usize,
     pub workers: Vec<Worker>,
     pub worker_tokens: Vec<WorkerTokens>,
-    pub packs_layout: bool,
-    pub parent_pack: PathBuf,
+    pub scan_root: PathBuf,
+}
+
+pub fn pack_dir(workdir: &Path, name: &str) -> PathBuf {
+    workdir.join("packs").join(name)
 }
 
 pub fn prepare_run(
@@ -315,7 +352,7 @@ fn normalize_packs(
     for mut worker in workers {
         let mut pack: Vec<String> = Vec::new();
         for entry in &worker.pack {
-            let name = entry.split('@').next().unwrap_or(entry);
+            let name = crate::resolve::parse_pin(entry)?.name;
             let Some(skill) = locked.iter().find(|l| l.name == name) else {
                 bail!("worker '{}': skill '{}' did not resolve", worker.name, entry);
             };
@@ -358,8 +395,8 @@ fn mount_run(
     } else {
         crate::mount::mount(locked, &workdir, cfg.mount_mode)?
     };
-    let parent_pack = if use_packs {
-        workdir.join("packs").join(&workers[0].name)
+    let scan_root = if use_packs {
+        pack_dir(&workdir, &workers[0].name)
     } else {
         workdir.clone()
     };
@@ -385,12 +422,7 @@ fn mount_run(
         .iter()
         .map(|worker| WorkerTokens {
             name: worker.name.clone(),
-            menu_tokens: worker
-                .pack
-                .iter()
-                .filter_map(|name| locked.iter().find(|l| &l.name == name))
-                .map(|l| l.description_tokens)
-                .sum(),
+            menu_tokens: worker.menu_tokens(locked),
         })
         .collect();
     Ok(PreparedRun {
@@ -404,8 +436,7 @@ fn mount_run(
         without_skills: without_skills.len(),
         workers: workers.to_vec(),
         worker_tokens,
-        packs_layout: use_packs,
-        parent_pack,
+        scan_root,
     })
 }
 
@@ -971,6 +1002,41 @@ pack = ["demo-scan"]
         );
         let err = read_manifest_input(&path).unwrap().validate().unwrap_err().to_string();
         assert_eq!(err, "worker 'w' has an empty pack");
+    }
+
+    #[test]
+    fn manifest_input_rejects_non_single_component_worker_names() {
+        for name in ["../escape", "a/b", "", "."] {
+            let dir = TempDir::new().unwrap();
+            let path = write_manifest_input(
+                &dir,
+                &format!(
+                    "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"{name}\"\npack = [\"a\"]\n"
+                ),
+            );
+            let err = read_manifest_input(&path).unwrap().validate().unwrap_err().to_string();
+            assert_eq!(
+                err,
+                format!("worker name '{name}' must be a single path component")
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_input_rejects_unknown_keys_inside_nested_tables() {
+        let dir = TempDir::new().unwrap();
+        let worker_level = write_manifest_input(
+            &dir,
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\ndescritpion = \"typo\"\npack = [\"a\"]\n",
+        );
+        let err = format!("{:#}", read_manifest_input(&worker_level).unwrap_err());
+        assert!(err.contains("unknown field"), "{err}");
+        let budget_level = write_manifest_input(
+            &dir,
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[budget]\nmax_menu_tokens = 10\ncap = 5\n\n[[workers]]\nname = \"w\"\npack = [\"a\"]\n",
+        );
+        let err = format!("{:#}", read_manifest_input(&budget_level).unwrap_err());
+        assert!(err.contains("unknown field"), "{err}");
     }
 
     #[test]

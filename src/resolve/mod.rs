@@ -169,12 +169,7 @@ pub fn enforce_worker_budget(
     fail_on_budget: bool,
 ) -> Result<()> {
     for worker in workers {
-        let menu_tokens: u64 = worker
-            .pack
-            .iter()
-            .filter_map(|name| locked.iter().find(|l| &l.name == name))
-            .map(|l| l.description_tokens)
-            .sum();
+        let menu_tokens = worker.menu_tokens(locked);
         if menu_tokens > max_menu_tokens {
             if fail_on_budget {
                 bail!(

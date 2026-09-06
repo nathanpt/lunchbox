@@ -487,17 +487,29 @@ fn hash_pin_roundtrip_and_mismatch() {
         .stderr(predicates::str::contains("hash mismatch"));
 }
 
+fn two_worker_manifest(dir: &Path, adapter: &str, reviewer_description: bool) -> PathBuf {
+    let path = dir.join("m.toml");
+    let description = if reviewer_description {
+        "description = \"Review specialist\"\n"
+    } else {
+        ""
+    };
+    fs::write(
+        &path,
+        format!(
+            "schema = 1\ntask = \"path b check\"\nadapter = \"{adapter}\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\n{description}pack = [\"demo-scan\"]\n"
+        ),
+    )
+    .unwrap();
+    path
+}
+
 #[test]
 fn from_manifest_mounts_per_worker_packs() {
     let home = scratch();
     let skills = demo_skills();
     let cwd = scratch();
-    let manifest = cwd.path().join("m.toml");
-    fs::write(
-        &manifest,
-        "schema = 1\ntask = \"path b check\"\nadapter = \"none\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\ndescription = \"Review specialist\"\npack = [\"demo-scan\"]\n",
-    )
-    .unwrap();
+    let manifest = two_worker_manifest(cwd.path(), "none", true);
     let output = lbx()
         .args([
             "start",
@@ -607,6 +619,21 @@ fn from_manifest_rejects_invalid() {
             "schema = 1\ntask = \"t\"\nadapter = \"none\"\n".to_string(),
             "manifest has no workers",
         ),
+        (
+            "worker name path escape",
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"../../../.pi/agent/agents/backdoor\"\npack = [\"demo-review\"]\n".to_string(),
+            "worker name '../../../.pi/agent/agents/backdoor' must be a single path component",
+        ),
+        (
+            "worker name with slash",
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"a/b\"\npack = [\"demo-review\"]\n".to_string(),
+            "worker name 'a/b' must be a single path component",
+        ),
+        (
+            "worker-level unknown key",
+            "schema = 1\ntask = \"t\"\nadapter = \"none\"\n\n[[workers]]\nname = \"w\"\ndescritpion = \"typo\"\npack = [\"demo-review\"]\n".to_string(),
+            "failed to parse manifest",
+        ),
     ];
     for (label, body, needle) in cases {
         let path = cwd.path().join(format!("{label}.toml"));
@@ -655,12 +682,7 @@ fn from_manifest_spawn_uses_parent_pack() {
     let cwd = scratch();
     let record = mock_pi(cwd.path());
     let path_env = path_with_mock_bin(cwd.path());
-    let manifest = cwd.path().join("m.toml");
-    fs::write(
-        &manifest,
-        "schema = 1\ntask = \"path b check\"\nadapter = \"pi\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\npack = [\"demo-scan\"]\n",
-    )
-    .unwrap();
+    let manifest = two_worker_manifest(cwd.path(), "pi", false);
     lbx()
         .args([
             "start",
@@ -723,12 +745,7 @@ fn from_manifest_pi_prints_agents() {
     let cwd = scratch();
     let record = mock_pi(cwd.path());
     let path_env = path_with_mock_bin(cwd.path());
-    let manifest = cwd.path().join("m.toml");
-    fs::write(
-        &manifest,
-        "schema = 1\ntask = \"path b check\"\nadapter = \"pi\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\ndescription = \"Review specialist\"\npack = [\"demo-scan\"]\n",
-    )
-    .unwrap();
+    let manifest = two_worker_manifest(cwd.path(), "pi", true);
     let output = lbx()
         .args([
             "start",
@@ -793,12 +810,7 @@ fn omp_manifest_overlay_and_agents() {
     let cwd = scratch();
     let record = mock_omp(cwd.path());
     let path_env = path_with_mock_bin(cwd.path());
-    let manifest = cwd.path().join("m.toml");
-    fs::write(
-        &manifest,
-        "schema = 1\ntask = \"path b check\"\nadapter = \"omp\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\npack = [\"demo-scan\"]\n",
-    )
-    .unwrap();
+    let manifest = two_worker_manifest(cwd.path(), "omp", false);
     let output = lbx()
         .args([
             "start",
