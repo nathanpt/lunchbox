@@ -8,7 +8,7 @@ Phase 1 implemented: core MVP + Pi Path A adapter. Rust CLI
 (`src/main.rs` + `config`/`library`/`hash`/`resolve`/`mount`/`tokens`/`run`/
 `adapter{,/none,/pi}` modules), `testdata/skills` demo pantry, 65 unit
 tests + 14 integration tests, all green. Features 001, 002, 007 pass.
-Branch `main`; commits: foundation `c14f6f9`, Phase 1 `2e11798`; tree clean.
+Branch `main`; commits: foundation `c14f6f9`, Phase 1 `05744ba`; tree clean.
 
 Not yet implemented (per DESIGN §22/§23): TUI milestone (features 003–006,
 Ratatui behind cargo features), Omp Path A adapter (DESIGN §23 step 10),
