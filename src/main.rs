@@ -115,17 +115,8 @@ fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
     let adapter_name = adapter_override.unwrap_or(&cfg.default_adapter);
     let adapter = adapter::resolve_adapter(adapter_name)?;
     let version = adapter.detect()?;
-    let dirs = adapter.skill_dirs(&cfg);
-    let mut dir_reports = Vec::new();
-    for dir in &dirs {
-        let found = library::scan_root(dir)?;
-        dir_reports.push(json!({
-            "dir": dir,
-            "exists": dir.is_dir(),
-            "skills": found.len(),
-        }));
-    }
-    let (without_tokens, union) = adapter::union_menu(adapter.as_ref(), &cfg);
+    let reports = adapter::scan_dirs(adapter.as_ref(), &cfg);
+    let (without_tokens, union) = adapter::union_from(&reports);
     let mut fattest = union.clone();
     fattest.sort_by(|a, b| b.tokens.cmp(&a.tokens).then(a.name.cmp(&b.name)));
     fattest.truncate(3);
@@ -134,7 +125,11 @@ fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
         let output = json!({
             "adapter": adapter_name,
             "adapter_version": version,
-            "skill_dirs": dir_reports,
+            "skill_dirs": reports.iter().map(|r| json!({
+                "dir": r.dir,
+                "exists": r.exists,
+                "skills": r.skills.len(),
+            })).collect::<Vec<_>>(),
             "menu_tokens": without_tokens,
             "fattest": fattest.iter().map(|s| json!({"name": s.name, "tokens": s.tokens})).collect::<Vec<_>>(),
             "duplicates": duplicates.iter().map(|group| group.iter().map(|s| s.name.clone()).collect::<Vec<_>>()).collect::<Vec<_>>(),
@@ -146,16 +141,13 @@ fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
             None => println!("adapter        {adapter_name} (not detected)"),
         }
         println!("skill dirs:");
-        for report in &dir_reports {
-            let dir = report["dir"].as_str().unwrap_or_default();
-            let exists = report["exists"].as_bool().unwrap_or(false);
-            let skills = report["skills"].as_u64().unwrap_or(0);
-            let state = if exists {
-                format!("{skills} skills")
+        for report in &reports {
+            let state = if report.exists {
+                format!("{} skills", report.skills.len())
             } else {
                 "absent".to_string()
             };
-            println!("  {dir:<40} {state}");
+            println!("  {:<40} {}", report.dir.display(), state);
         }
         println!("menu_tokens    {without_tokens}  ({} skills union)", union.len());
         if union.is_empty() {
@@ -196,14 +188,18 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
     }
     let libraries: Vec<PathBuf> = args.libraries.iter().map(PathBuf::from).collect();
     let locked = resolve::resolve(&args.skills, &cfg, &libraries)?;
-
+    let mut signals = Signals::new([SIGINT, SIGTERM])?;
     let run_id = run::new_run_id()?;
-    let runs_dir = cfg.runs_dir.clone();
-    let run_dir = runs_dir.join(&run_id);
-    let workdir = run_dir.join("workdir");
+    let run_dir = cfg.runs_dir.join(&run_id);
     let outcome = start_run(
-        &args, &cfg, adapter.as_ref(), &adapter_name, &run_id, &run_dir, &workdir,
-        &harness_argv, &locked,
+        &args,
+        &cfg,
+        adapter.as_ref(),
+        &run_id,
+        &run_dir,
+        &harness_argv,
+        &locked,
+        &mut signals,
     );
     match outcome {
         Ok(code) => Ok(code),
@@ -216,18 +212,19 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn start_run(
     args: &StartArgs,
     cfg: &Config,
     adapter: &dyn Adapter,
-    adapter_name: &str,
     run_id: &str,
     run_dir: &Path,
-    workdir: &Path,
     harness_argv: &[String],
     locked: &[Locked],
+    signals: &mut Signals,
 ) -> Result<ExitCode> {
+    let adapter_name = adapter.name();
+    let workdir = run_dir.join("workdir");
+    let workdir = workdir.as_path();
     std::fs::create_dir_all(run_dir)
         .with_context(|| format!("failed to create run dir {}", run_dir.display()))?;
     let skill_names: Vec<String> = locked.iter().map(|s| s.name.clone()).collect();
@@ -258,6 +255,11 @@ fn start_run(
         run_id,
         json!({"event": "mounted", "mode": mount_mode.as_str(), "workdir": workdir}),
     )?;
+
+    if let Some(signal) = signals.pending().next() {
+        let _ = std::fs::remove_dir_all(run_dir);
+        return Ok(ExitCode::from(signal_exit_code(signal)));
+    }
 
     let pins: Vec<String> = locked
         .iter()
@@ -324,7 +326,6 @@ fn start_run(
         return Ok(ExitCode::SUCCESS);
     }
 
-    let mut signals = Signals::new([SIGINT, SIGTERM])?;
     let exit = loop {
         if let Some(signal) = signals.pending().next() {
             break WaitOutcome::Signaled(signal);
@@ -337,7 +338,7 @@ fn start_run(
     match exit {
         WaitOutcome::Exited(code) => {
             if !args.keep {
-                run::teardown(run_dir, Outcome::Ok, &Config::load()?)?;
+                run::teardown(run_dir, Outcome::Ok, cfg)?;
             }
             Ok(ExitCode::from(code.unwrap_or(1).clamp(0, 255) as u8))
         }
@@ -345,10 +346,18 @@ fn start_run(
             run::signal_pid(child_pid, "TERM");
             let _ = child.wait();
             if !args.keep {
-                run::teardown(run_dir, Outcome::Aborted, &Config::load()?)?;
+                run::teardown(run_dir, Outcome::Aborted, cfg)?;
             }
-            Ok(ExitCode::from(if signal == SIGINT { 130 } else { 143 }))
+            Ok(ExitCode::from(signal_exit_code(signal)))
         }
+    }
+}
+
+fn signal_exit_code(signal: i32) -> u8 {
+    if signal == SIGINT {
+        130
+    } else {
+        143
     }
 }
 
@@ -388,9 +397,11 @@ fn cmd_status(run_id: Option<&str>, json: bool) -> Result<ExitCode> {
 fn cmd_finish(run_id: Option<&str>) -> Result<ExitCode> {
     let cfg = Config::load()?;
     let run_dir = run::resolve_run_arg(&cfg.runs_dir, run_id)?;
-    if let Some(pid) = run::read_pid(&run_dir) {
-        if run::pid_alive(pid) {
-            bail!("run is still running; abort first");
+    if run::read_result(&run_dir)?.is_none() {
+        if let Some(pid) = run::read_pid(&run_dir) {
+            if run::pid_alive(pid) {
+                bail!("run is still running; abort first");
+            }
         }
     }
     run::teardown(&run_dir, Outcome::Ok, &cfg)?;
@@ -404,12 +415,14 @@ fn cmd_finish(run_id: Option<&str>) -> Result<ExitCode> {
 fn cmd_abort(run_id: Option<&str>) -> Result<ExitCode> {
     let cfg = Config::load()?;
     let run_dir = run::resolve_run_arg(&cfg.runs_dir, run_id)?;
-    if let Some(pid) = run::read_pid(&run_dir) {
-        if run::pid_alive(pid) {
-            run::signal_pid(pid, "TERM");
-            if !run::wait_pid_exit(pid, Duration::from_secs(5)) {
-                run::signal_pid(pid, "KILL");
-                let _ = run::wait_pid_exit(pid, Duration::from_secs(5));
+    if run::read_result(&run_dir)?.is_none() {
+        if let Some(pid) = run::read_pid(&run_dir) {
+            if run::pid_alive(pid) {
+                run::signal_pid(pid, "TERM");
+                if !run::wait_pid_exit(pid, Duration::from_secs(5)) {
+                    run::signal_pid(pid, "KILL");
+                    let _ = run::wait_pid_exit(pid, Duration::from_secs(5));
+                }
             }
         }
     }
@@ -479,11 +492,9 @@ fn cmd_why(run_id: Option<&str>, json: bool) -> Result<ExitCode> {
 }
 
 fn cmd_adapters(explain: bool) -> Result<ExitCode> {
-    let builtins: [(&str, Box<dyn Adapter>); 2] = [
-        ("none", Box::new(adapter::NoneAdapter)),
-        ("pi", Box::new(adapter::PiAdapter)),
-    ];
-    for (name, adapter) in &builtins {
+    let mut failure = None;
+    for name in ["none", "pi"] {
+        let adapter = adapter::resolve_adapter(name)?;
         let version = adapter.detect()?;
         let selftest = adapter.selftest()?;
         let version_text = match &version {
@@ -492,10 +503,11 @@ fn cmd_adapters(explain: bool) -> Result<ExitCode> {
         };
         let selftest_text = match &selftest {
             SelftestOutcome::Ok => "selftest: ok".to_string(),
-            SelftestOutcome::Skipped => {
-                format!("{} not found; selftest skipped", adapter.name())
+            SelftestOutcome::Skipped => format!("{name} not found; selftest skipped"),
+            SelftestOutcome::Failed(reason) => {
+                failure = Some(reason.clone());
+                format!("selftest: FAILED — {reason}")
             }
-            SelftestOutcome::Failed(reason) => format!("selftest: FAILED — {reason}"),
         };
         println!("{name:<8} {version_text:<12} {selftest_text}");
         if explain {
@@ -506,11 +518,8 @@ fn cmd_adapters(explain: bool) -> Result<ExitCode> {
             println!();
         }
     }
-    for adapter in &builtins {
-        if let SelftestOutcome::Failed(reason) = adapter.1.selftest()? {
-            bail!("{reason}");
-        }
+    if let Some(reason) = failure {
+        bail!("{reason}");
     }
     Ok(ExitCode::SUCCESS)
 }
-

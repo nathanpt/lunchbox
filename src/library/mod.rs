@@ -12,6 +12,7 @@ pub struct SkillMeta {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FoundSkill {
     pub name: String,
+    pub description: String,
     pub source: PathBuf,
 }
 
@@ -81,23 +82,7 @@ pub fn scan_root(root: &Path) -> Result<Vec<FoundSkill>> {
     if !root.is_dir() {
         return Ok(Vec::new());
     }
-    let mut found = Vec::new();
-    for entry in fs::read_dir(root)
-        .with_context(|| format!("failed to list library root {}", root.display()))?
-    {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let path = entry.path();
-        if let Some(meta) = read_skill_meta(&path)? {
-            found.push(FoundSkill {
-                name: meta.name,
-                source: path,
-            });
-        }
-    }
-    found.sort_by(|a, b| a.name.cmp(&b.name));
+    let found = list_valid_packages(root)?;
     let mut seen = HashSet::new();
     for skill in &found {
         if !seen.insert(skill.name.as_str()) {
@@ -111,8 +96,33 @@ pub fn scan_root(root: &Path) -> Result<Vec<FoundSkill>> {
     Ok(found)
 }
 
+fn list_valid_packages(root: &Path) -> Result<Vec<FoundSkill>> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(root)
+        .with_context(|| format!("failed to list library root {}", root.display()))?
+    {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let path = entry.path();
+        if let Some(meta) = read_skill_meta(&path)? {
+            found.push(FoundSkill {
+                name: meta.name,
+                description: meta.description,
+                source: path,
+            });
+        }
+    }
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(found)
+}
+
 pub fn find_in_root(root: &Path, name: &str) -> Result<Vec<FoundSkill>> {
-    let mut matches: Vec<FoundSkill> = scan_root(root)?
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+    let matches: Vec<FoundSkill> = list_valid_packages(root)?
         .into_iter()
         .filter(|skill| skill.name == name)
         .collect();
@@ -125,8 +135,6 @@ pub fn find_in_root(root: &Path, name: &str) -> Result<Vec<FoundSkill>> {
                 by_dir_name.display()
             );
         }
-    } else {
-        matches.dedup();
     }
     Ok(matches)
 }

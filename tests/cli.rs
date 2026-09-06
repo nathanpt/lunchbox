@@ -9,25 +9,8 @@ fn lbx() -> Command {
     Command::cargo_bin("lunchbox").unwrap()
 }
 
-fn demo_skills() -> TempDir {
-    let dir = TempDir::new().unwrap();
-    for name in ["demo-review", "demo-scan"] {
-        let package = dir.path().join(name);
-        fs::create_dir_all(&package).unwrap();
-        fs::write(
-            package.join("SKILL.md"),
-            format!(
-                "---\nname: {name}\ndescription: {}\n---\nbody\n",
-                if name == "demo-review" {
-                    "Review staged changes for defects and risks."
-                } else {
-                    "Scan for leaked secrets in the worktree."
-                }
-            ),
-        )
-        .unwrap();
-    }
-    dir
+fn demo_skills() -> PathBuf {
+    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/skills"))
 }
 
 fn scratch() -> TempDir {
@@ -56,7 +39,7 @@ fn feature_001_mount_unmount_loop() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--skill",
@@ -115,7 +98,7 @@ fn deny_gate_leaves_no_run_dir() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-scan",
             "--adapter",
@@ -138,7 +121,7 @@ fn feature_002_doctor_reports_tree_without_mounting() {
     let global = home.path().join(".agents").join("skills");
     fs::create_dir_all(&global).unwrap();
     for name in ["demo-review", "demo-scan"] {
-        let src = fs::read_to_string(skills.path().join(name).join("SKILL.md")).unwrap();
+        let src = fs::read_to_string(skills.join(name).join("SKILL.md")).unwrap();
         fs::create_dir_all(global.join(name)).unwrap();
         fs::write(global.join(name).join("SKILL.md"), src).unwrap();
     }
@@ -181,7 +164,7 @@ fn start_json_reports_numbers() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--skill",
@@ -214,7 +197,7 @@ fn hash_pin_roundtrip_and_mismatch() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--adapter",
@@ -244,7 +227,7 @@ fn hash_pin_roundtrip_and_mismatch() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             &pin,
             "--adapter",
@@ -260,7 +243,7 @@ fn hash_pin_roundtrip_and_mismatch() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             &bogus,
             "--adapter",
@@ -293,6 +276,14 @@ fn omp_adapter_refused_this_phase() {
         .stderr(predicates::str::contains("omp adapter arrives after Phase 1"));
 }
 
+fn path_with_mock_pi(cwd: &Path) -> std::ffi::OsString {
+    std::env::join_paths(
+        std::iter::once(cwd.join("bin"))
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())),
+    )
+    .unwrap()
+}
+
 fn mock_pi(scratch_dir: &Path) -> PathBuf {
     let bin = scratch_dir.join("bin");
     fs::create_dir_all(&bin).unwrap();
@@ -316,17 +307,13 @@ fn pi_spawn_records_audit_and_aborts() {
     let skills = demo_skills();
     let cwd = scratch();
     let record = mock_pi(cwd.path());
-    let path_env = std::env::join_paths(
-        std::iter::once(cwd.path().join("bin"))
-            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())),
-    )
-    .unwrap();
+    let path_env = path_with_mock_pi(cwd.path());
 
     lbx()
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--adapter",
@@ -406,16 +393,12 @@ fn finish_on_live_run_errors() {
     let skills = demo_skills();
     let cwd = scratch();
     let _record = mock_pi(cwd.path());
-    let path_env = std::env::join_paths(
-        std::iter::once(cwd.path().join("bin"))
-            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())),
-    )
-    .unwrap();
+    let path_env = path_with_mock_pi(cwd.path());
     lbx()
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--adapter",
@@ -451,17 +434,13 @@ fn sigint_forwards_and_aborts() {
     let skills = demo_skills();
     let cwd = scratch();
     let _record = mock_pi(cwd.path());
-    let path_env = std::env::join_paths(
-        std::iter::once(cwd.path().join("bin"))
-            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())),
-    )
-    .unwrap();
+    let path_env = path_with_mock_pi(cwd.path());
     let binary = env!("CARGO_BIN_EXE_lunchbox");
     let mut child = std::process::Command::new(binary)
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--adapter",
@@ -504,7 +483,7 @@ fn leaked_run_is_collected_by_gc() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--adapter",
@@ -544,7 +523,7 @@ fn dry_run_prints_argv_and_spawns_nothing() {
         .args([
             "start",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--adapter",
@@ -586,7 +565,7 @@ fn why_reports_five_line_recap() {
             "--task",
             "review PR 412",
             "--library",
-            skills.path().to_str().unwrap(),
+            skills.to_str().unwrap(),
             "--skill",
             "demo-review",
             "--skill",
@@ -631,7 +610,7 @@ fn doctor_human_output_on_fake_tree() {
     fs::create_dir_all(global.join("demo-review")).unwrap();
     fs::write(
         global.join("demo-review").join("SKILL.md"),
-        fs::read_to_string(skills.path().join("demo-review").join("SKILL.md")).unwrap(),
+        fs::read_to_string(skills.join("demo-review").join("SKILL.md")).unwrap(),
     )
     .unwrap();
     lbx()
@@ -644,4 +623,60 @@ fn doctor_human_output_on_fake_tree() {
         .stdout(predicates::str::contains("menu_tokens    14"))
         .stdout(predicates::str::contains("demo-review"))
         .stdout(predicates::str::contains("duplicates     none"));
+}
+
+#[test]
+fn abort_on_finished_run_is_a_no_op() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let _record = mock_pi(cwd.path());
+    let path_env = path_with_mock_pi(cwd.path());
+    lbx()
+        .args([
+            "start",
+            "--library",
+            skills.to_str().unwrap(),
+            "--skill",
+            "demo-review",
+            "--adapter",
+            "pi",
+            "--no-wait",
+            "--",
+            "pi",
+        ])
+        .env("HOME", home.path())
+        .env("PATH", &path_env)
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    lbx()
+        .args(["abort"])
+        .env("HOME", home.path())
+        .env("PATH", &path_env)
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    let run = only_run(home.path());
+    let result: Value =
+        serde_json::from_str(&fs::read_to_string(run.join("result.json")).unwrap()).unwrap();
+    assert_eq!(result["outcome"], serde_json::json!("aborted"));
+    lbx()
+        .args(["abort"])
+        .env("HOME", home.path())
+        .env("PATH", &path_env)
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("aborted"));
+    let result_again: Value =
+        serde_json::from_str(&fs::read_to_string(run.join("result.json")).unwrap()).unwrap();
+    assert_eq!(result_again["outcome"], serde_json::json!("aborted"));
+    lbx()
+        .args(["finish"])
+        .env("HOME", home.path())
+        .env("PATH", &path_env)
+        .current_dir(cwd.path())
+        .assert()
+        .success();
 }

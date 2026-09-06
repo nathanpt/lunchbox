@@ -58,32 +58,49 @@ pub fn without_estimate(adapter_name: &str, cfg: &Config) -> u64 {
     union_menu(adapter.as_ref(), cfg).0
 }
 
-pub fn union_menu(adapter: &dyn Adapter, cfg: &Config) -> (u64, Vec<FoundDirSkill>) {
-    let mut by_name: BTreeMap<String, FoundDirSkill> = BTreeMap::new();
-    for dir in adapter.skill_dirs(cfg) {
-        let Ok(found) = crate::library::scan_root(&dir) else {
-            continue;
-        };
-        for skill in found {
-            let meta = crate::library::read_skill_meta(&skill.source)
-                .ok()
-                .flatten()
-                .unwrap_or(crate::library::SkillMeta {
-                    name: skill.name.clone(),
-                    description: String::new(),
-                });
-            let tokens = crate::tokens::estimate(&meta.name, &meta.description);
-            by_name
-                .entry(skill.name.clone())
-                .or_insert(FoundDirSkill {
+pub struct DirReport {
+    pub dir: PathBuf,
+    pub exists: bool,
+    pub skills: Vec<FoundDirSkill>,
+}
+
+pub fn scan_dirs(adapter: &dyn Adapter, cfg: &Config) -> Vec<DirReport> {
+    adapter
+        .skill_dirs(cfg)
+        .into_iter()
+        .map(|dir| {
+            let exists = dir.is_dir();
+            let skills = crate::library::scan_root(&dir)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|skill| FoundDirSkill {
+                    tokens: crate::tokens::estimate(&skill.name, &skill.description),
                     name: skill.name,
                     dir: dir.clone(),
-                    tokens,
-                });
+                })
+                .collect();
+            DirReport { dir, exists, skills }
+        })
+        .collect()
+}
+
+pub fn union_from(reports: &[DirReport]) -> (u64, Vec<FoundDirSkill>) {
+    let mut by_name: BTreeMap<String, FoundDirSkill> = BTreeMap::new();
+    for report in reports {
+        for skill in &report.skills {
+            by_name.entry(skill.name.clone()).or_insert_with(|| FoundDirSkill {
+                name: skill.name.clone(),
+                dir: skill.dir.clone(),
+                tokens: skill.tokens,
+            });
         }
     }
     let total = by_name.values().map(|s| s.tokens).sum();
     (total, by_name.into_values().collect())
+}
+
+pub fn union_menu(adapter: &dyn Adapter, cfg: &Config) -> (u64, Vec<FoundDirSkill>) {
+    union_from(&scan_dirs(adapter, cfg))
 }
 
 #[derive(Debug, Clone)]

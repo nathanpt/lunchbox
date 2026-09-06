@@ -133,7 +133,6 @@ fn read_layer(path: &Path) -> Result<Layer> {
 
 fn merge(global: Layer, project: Layer) -> Config {
     let defaults = Config::default();
-    let pick = |g: Option<String>, p: Option<String>| p.or(g).unwrap_or_default();
     Config {
         library_paths: project
             .library_paths
@@ -142,27 +141,31 @@ fn merge(global: Layer, project: Layer) -> Config {
             .into_iter()
             .chain(global.library_paths.clone().unwrap_or_default())
             .collect(),
-        default_adapter: project
-            .default_adapter
-            .or(global.default_adapter)
-            .unwrap_or(defaults.default_adapter),
-        mount_mode: project
-            .mount_mode
-            .or(global.mount_mode)
-            .unwrap_or(defaults.mount_mode),
-        scan_command: pick(global.scan_command, project.scan_command),
+        default_adapter: pick(
+            global.default_adapter,
+            project.default_adapter,
+            defaults.default_adapter,
+        ),
+        mount_mode: pick(global.mount_mode, project.mount_mode, defaults.mount_mode),
+        scan_command: pick(global.scan_command, project.scan_command, String::new()),
         allow: merge_allow(global.allow.unwrap_or_default(), project.allow.unwrap_or_default()),
         deny: union_dedup(global.deny.unwrap_or_default(), project.deny.unwrap_or_default()),
-        max_menu_tokens: project
-            .max_menu_tokens
-            .or(global.max_menu_tokens)
-            .unwrap_or(defaults.max_menu_tokens),
-        fail_on_budget: project
-            .fail_on_budget
-            .or(global.fail_on_budget)
-            .unwrap_or(defaults.fail_on_budget),
-        runs_dir: project.runs_dir.or(global.runs_dir).unwrap_or(defaults.runs_dir),
+        max_menu_tokens: pick(
+            global.max_menu_tokens,
+            project.max_menu_tokens,
+            defaults.max_menu_tokens,
+        ),
+        fail_on_budget: pick(
+            global.fail_on_budget,
+            project.fail_on_budget,
+            defaults.fail_on_budget,
+        ),
+        runs_dir: pick(global.runs_dir, project.runs_dir, defaults.runs_dir),
     }
+}
+
+fn pick<T>(global: Option<T>, project: Option<T>, default: T) -> T {
+    project.or(global).unwrap_or(default)
 }
 
 fn merge_allow(global: Vec<String>, project: Vec<String>) -> Vec<String> {

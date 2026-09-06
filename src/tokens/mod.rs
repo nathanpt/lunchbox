@@ -20,7 +20,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn rounds_up_partial_tokens() {
         assert_eq!(estimate("a", ""), 1);
         assert_eq!(estimate("abc", ""), 1);

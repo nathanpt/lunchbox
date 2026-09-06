@@ -413,7 +413,8 @@ pub fn teardown(run_dir: &Path, outcome: Outcome, cfg: &crate::config::Config) -
 pub fn gc(runs_dir: &Path, older_than: Duration) -> Result<Vec<PathBuf>> {
     let mut removed = Vec::new();
     for dir in run_dirs(runs_dir) {
-        if run_status(&dir) == RunStatus::Running {
+        let status = run_status(&dir);
+        if status == RunStatus::Running {
             continue;
         }
         let stale = fs::metadata(&dir)
@@ -422,7 +423,7 @@ pub fn gc(runs_dir: &Path, older_than: Duration) -> Result<Vec<PathBuf>> {
             .and_then(|mtime| mtime.elapsed().ok())
             .map(|age| age >= older_than)
             .unwrap_or(false);
-        if run_status(&dir) == RunStatus::Leaked || stale {
+        if status == RunStatus::Leaked || stale {
             fs::remove_dir_all(&dir)
                 .with_context(|| format!("failed to remove {}", dir.display()))?;
             removed.push(dir);

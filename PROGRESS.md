@@ -6,8 +6,8 @@ Last updated: 2026-09-06 (Phase 1 complete)
 
 Phase 1 implemented: core MVP + Pi Path A adapter. Rust CLI
 (`src/main.rs` + `config`/`library`/`hash`/`resolve`/`mount`/`tokens`/`run`/
-`adapter{,/none,/pi}` modules), `testdata/skills` demo pantry, 65 unit
-tests + 14 integration tests, all green. Features 001, 002, 007 pass.
+`adapter{,/none,/pi}` modules), `testdata/skills` demo pantry, 67 unit
+tests + 15 integration tests + 15 integration tests, all green. Features 001, 002, 007 pass.
 Branch `main`; commits: foundation `c14f6f9`, Phase 1 `05744ba`; tree clean.
 
 Not yet implemented (per DESIGN §22/§23): TUI milestone (features 003–006,
@@ -19,7 +19,7 @@ manifests, scan-command hook, `skills/lunchbox/` driver Skill.
 
 | Check | Command | Result |
 |---|---|---|
-| Full test suite | `cargo test` | ok — 65 unit + 14 integration, 0 failed |
+| Full test suite | `cargo test` | ok — 67 unit + 15 integration, 0 failed |
 | Build warnings | `cargo build` | clean |
 | feature-001 loop | `start --library testdata/skills --skill demo-review --skill demo-scan --adapter none` → `finish` → `finish` | exit 0; workdir = exactly the two packages; `menu_tokens this run: 27`; workdir gone; `result.json` `unmounted: true`; second finish idempotent exit 0 |
 | Deny gate | `lunchbox.toml` with `deny = ["demo-scan"]`, temp `HOME` | non-zero, message names the denial, no run dir created (integration test `deny_gate_leaves_no_run_dir`) |
@@ -49,6 +49,29 @@ manifests, scan-command hook, `skills/lunchbox/` driver Skill.
 - assert_cmd blocks on inherited stdout pipes: the mock `pi` used in
   integration tests redirects its own stdio to /dev/null so `--no-wait`
   spawns don't wedge the harness for the mock's lifetime.
+
+## Post-Phase-1 simplify pass (2026-09-06)
+
+Three-lane review (reuse / quality / efficiency) of the Phase 1 diff;
+accepted and fixed: hash-pin disambiguation arm was dead code
+(`find_in_root` inherited `scan_root`'s duplicate-name error, so
+"duplicate names resolve via hash pin" never ran — now `find_in_root`
+enumerates without the gate; regression-tested + CLI-verified);
+`finish`/`abort` now consult `result.json` before touching a pid (no
+signaling stale/recycled pids on already-torn-down runs); `--wait`
+teardown reuses the in-scope `Config` instead of re-loading (a config
+edited mid-run can no longer fail finish or diverge
+`without_menu_tokens`); SIGINT/SIGTERM handlers register before
+resolve/mount with a post-mount checkpoint (Ctrl-C during a slow start
+cleans the run dir instead of leaking it until `gc`); `adapters` runs
+each selftest once; doctor scans each skill dir once (typed reports,
+one tolerant error policy); `FoundSkill` carries `description` (drops
+triple SKILL.md re-reads and two dead fallback branches); dead
+`From<Expanded>` impl, doubled `#[test]` attribute, duplicated mount
+copy loop, and half-applied `pick` closure removed; integration tests
+use the checked-in `testdata/skills` fixtures and a shared mock-PATH
+helper. Rejected: `kill -0` polling via libc (dep weight), per-pin scan
+caching (CLI scale), lock/status stringly-typing (TOML schema contract).
 
 ## Active work
 

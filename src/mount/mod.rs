@@ -10,9 +10,7 @@ pub fn mount(locked: &[Locked], workdir: &Path, mode: MountMode) -> Result<Mount
         .with_context(|| format!("failed to create workdir {}", workdir.display()))?;
     match mode {
         MountMode::Copy => {
-            for skill in locked {
-                copy_tree(&skill.source, &workdir.join(&skill.name))?;
-            }
+            copy_all(locked, workdir)?;
             Ok(MountMode::Copy)
         }
         MountMode::Symlink => {
@@ -28,12 +26,17 @@ pub fn mount(locked: &[Locked], workdir: &Path, mode: MountMode) -> Result<Mount
                 return Ok(MountMode::Symlink);
             }
             clean_dir(workdir)?;
-            for skill in locked {
-                copy_tree(&skill.source, &workdir.join(&skill.name))?;
-            }
+            copy_all(locked, workdir)?;
             Ok(MountMode::Copy)
         }
     }
+}
+
+fn copy_all(locked: &[Locked], workdir: &Path) -> Result<()> {
+    for skill in locked {
+        copy_tree(&skill.source, &workdir.join(&skill.name))?;
+    }
+    Ok(())
 }
 
 fn clean_dir(dir: &Path) -> Result<()> {
