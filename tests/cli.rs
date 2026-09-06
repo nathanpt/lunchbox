@@ -495,15 +495,6 @@ fn project_scan_config(cwd: &Path, scan_command: &str) {
     .unwrap();
 }
 
-fn scan_audit_event(run: &Path) -> Value {
-    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
-    audit
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .find(|event: &Value| event["event"] == "scan")
-        .expect("audit must contain a scan event")
-}
-
 #[test]
 fn scan_pass_invokes_scanner_and_locks() {
     let home = scratch();
@@ -540,7 +531,12 @@ fn scan_pass_invokes_scanner_and_locks() {
     let run = only_run(home.path());
     let lock: Value = toml::from_str(&fs::read_to_string(run.join("lunchbox.lock")).unwrap()).unwrap();
     assert_eq!(lock["skills"][0]["scan"], serde_json::json!("pass"));
-    let scan = scan_audit_event(&run);
+    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
+    let scan: Value = audit
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .find(|event: &Value| event["event"] == "scan")
+        .expect("audit must contain a scan event");
     assert!(scan["command"].as_str().unwrap().contains("printf '%s'"));
     assert_eq!(
         scan["skills"],
@@ -620,7 +616,12 @@ fn scan_override_proceeds_and_audits() {
     let run = only_run(home.path());
     let lock: Value = toml::from_str(&fs::read_to_string(run.join("lunchbox.lock")).unwrap()).unwrap();
     assert_eq!(lock["skills"][0]["scan"], serde_json::json!("overridden"));
-    let scan = scan_audit_event(&run);
+    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
+    let scan: Value = audit
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .find(|event: &Value| event["event"] == "scan")
+        .expect("audit must contain a scan event");
     assert_eq!(
         scan["skills"],
         serde_json::json!([{"name": "demo-review", "scan": "overridden"}])

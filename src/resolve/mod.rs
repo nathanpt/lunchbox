@@ -15,7 +15,6 @@ pub struct Locked {
     pub description_tokens: u64,
 }
 
-
 #[derive(Debug)]
 pub struct Pin {
     pub name: String,
@@ -89,7 +88,7 @@ pub fn resolve(
         let scan = if cfg.scan_command.is_empty() {
             "none".to_string()
         } else {
-            let output = scan_skill(&cfg.scan_command, &found.source)?;
+            let output = spawn_scan("sh", &cfg.scan_command, &found.source)?;
             if output.status.success() {
                 "pass".to_string()
             } else if override_scan {
@@ -122,10 +121,6 @@ pub fn resolve(
     Ok(locked)
 }
 
-fn scan_skill(command: &str, source: &Path) -> Result<Output> {
-    spawn_scan("sh", command, source)
-}
-
 fn spawn_scan(program: &str, command: &str, source: &Path) -> Result<Output> {
     Command::new(program)
         .arg("-c")
@@ -142,7 +137,7 @@ fn stderr_excerpt(stderr: &[u8]) -> String {
     if text.is_empty() {
         return String::new();
     }
-    let truncated: String = text.chars().take(500).collect();
+    let truncated: String = text.chars().filter(|c| *c != '\r').take(500).collect();
     format!(": {}", truncated.replace('\n', "; "))
 }
 
@@ -427,6 +422,19 @@ mod tests {
         assert!(err.contains("scan_command 'echo findings >&2; exit 3'"), "{err}");
         assert!(err.contains("exit 3"), "{err}");
         assert!(err.contains("findings"), "{err}");
+    }
+
+    #[test]
+    fn scan_excerpt_stays_single_line_with_carriage_returns() {
+        let dir = pantry();
+        let mut cfg = config_with_root(&dir.path().to_path_buf());
+        cfg.scan_command = "printf 'find\\rings\\nsecond\\r\\nline\\n' >&2; exit 3".to_string();
+        let err = resolve(&pins(&["demo-review"]), &cfg, &[], false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("findings"), "{err}");
+        assert!(err.contains("second; line"), "{err}");
+        assert!(!err.contains('\r'), "{err}");
     }
 
     #[test]

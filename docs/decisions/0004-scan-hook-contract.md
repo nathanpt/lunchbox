@@ -41,7 +41,9 @@ Option 1, with these rules:
 
 - Invocation: `sh -c '<scan_command> "$1"' sh <package-source>`. The
   package source path is appended as the final quoted argument; the config
-  string is otherwise used verbatim.
+  string is otherwise used verbatim and must not itself reference `$1` —
+  a config that also embeds `"$1"` receives the path twice (observed:
+  `printf '%s' "$1" > record` records a doubled path).
 - Scanning happens pre-mount on the pantry source, once per locked skill,
   inside `resolve` after the deny/allow gates and after duplicate-pin
   dedup — a skill shared by several workers scans once.
@@ -56,7 +58,8 @@ Option 1, with these rules:
   separate flag — out of scope.
 - Scanner stdout/stderr is captured, not inherited: `start --json` remains
   one parseable line, and a bounded excerpt of scanner stderr (first 500
-  chars, newlines collapsed to `; `) surfaces in the failure message.
+  chars, CR stripped, newlines collapsed to `; `) surfaces in the failure
+  message. Capture is unbounded in v1 (both pipes read to EOF; TD-002).
   Failure without override bails
   `skill '<name>' failed scan_command '<cmd>' (exit <code>): <excerpt>`;
   spawn/IO failure bails `failed to run scan_command '<cmd>': <io error>`.
@@ -75,6 +78,12 @@ Option 1, with these rules:
 - `sh` must exist on the host (already assumed by the symlink/mount code
   and mock harnesses).
 - A scanner that writes to stdout no longer corrupts `--json` output.
+- The scan verdict is point-in-time, like the hash gate (DESIGN §17:
+  "new hash ≠ lock; user must re-pin"): symlink mode (the default)
+  exposes the live pantry source for the run's lifetime, and copy mode
+  has a scan→copy window. Scanners are expected to be read-only on the
+  source — one that mutates it silently invalidates the hash the skill
+  is locked under.
 - `--dry-run` scans (it mounts, so it gates); `--from` scans the union
   once regardless of worker sharing. `doctor` and `tui preview` never
   scan — they are gate-free by design.
@@ -85,7 +94,8 @@ Option 1, with these rules:
 ## Confirmation evidence
 
 - Feature-013 in `docs/feature-list.json` and its verification record in
-  PROGRESS.md: recording scanner (`printf '%s' "$1" > record`) proves the
-  shell-string shape; `exit 3` fails closed naming skill/command/code;
+  PROGRESS.md: recording scanner (`printf '%s' > record`) proves the
+  shell-string shape (redirection; the appended source path arrives as
+  the scanner's argument); `exit 3` fails closed naming skill/command/code;
   `--override-scan` proceeds, warns, and audits `override: true`;
   `echo junk` on scanner stdout keeps `start --json` a single object.

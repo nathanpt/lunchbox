@@ -10,8 +10,8 @@ milestone: core CLI, Pi and Omp Path A adapters, the four v1 TUI screens
 behind cargo features, the DESIGN §25 README, `--from manifest.toml`
 multi-worker runs with per-worker packs, Path B run-local agent files
 (print mode, both adapters), and the `scan_command` policy gate with
-`--override-scan` (ADR-0004). 104 unit + 30 integration tests green in the
-default configuration, 89 + 30 with `--no-default-features`, zero warnings
+`--override-scan` (ADR-0004). 105 unit + 30 integration tests green in the
+default configuration, 90 + 30 with `--no-default-features`, zero warnings
 in both. **Features 001–013 all pass.** Branch `main`; tree clean after
 each phase commit.
 
@@ -26,8 +26,8 @@ binary `target/debug/lunchbox`.
 
 | Check | Command | Result |
 |---|---|---|
-| Full suite (default features) | `cargo test` | ok — 104 unit + 30 integration, 0 failed, 0 warnings |
-| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 89 unit + 30 integration, 0 failed, 0 warnings |
+| Full suite (default features) | `cargo test` | ok — 105 unit + 30 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 90 + 30 integration, 0 failed, 0 warnings |
 | feature-013 pass | `scan_command = 'exit 0'` → `start --library testdata/skills --skill demo-review --adapter none --json` | exit 0; lock `scan = "pass"`; audit `{"event":"scan","command":"exit 0","skills":[{"name":"demo-review","scan":"pass"}],"override":false}`; `finish` → `unmounted: true` |
 | Invocation shape | `scan_command = 'printf '\''%s'\'' >> $TMP/record'` → single-skill and two-worker `--from` runs | record holds the resolved pantry source path; the two-worker run with `demo-review` in both packs records `demo-review` once (union dedupe); both locks `scan = "pass"` |
 | feature-013 fail closed | `scan_command = 'echo findings >&2; exit 3'` | exit 1, stderr `skill 'demo-review' failed scan_command 'echo findings >&2; exit 3' (exit 3): findings`; `~/.lunchbox/runs` absent (scan runs before run-dir creation) |
@@ -36,7 +36,6 @@ binary `target/debug/lunchbox`.
 | JSON purity | `scan_command = 'echo junk'` → `start --json` | full stdout parses as exactly one JSON object (scanner stdout captured, not inherited) |
 | Default / no drift | no `scan_command` anywhere | lock `scan = "none"`, no scan audit event; `doctor`, `adapters`, `tui preview --json`, and the README-shape `start` human output byte-identical to the pre-change binary (built from HEAD in a scratch worktree); README untouched |
 | Unit gates | resolve tests `scan_*` | pass/none/overridden vocabulary, error names skill+command+`exit 3`+stderr excerpt, spawn-failure bail (integration tests `scan_pass_invokes_scanner_and_locks`, `scan_fail_fails_closed`, `scan_override_proceeds_and_audits`, `scan_json_stays_pure`) |
-
 `doctor`, `tui preview`, and `adapters` never spawn a scanner by design —
 `tokens::preview` does not call `resolve`; confirmed empirically by the
 byte-identical outputs above.
@@ -51,6 +50,35 @@ shell-string semantics via the redirection. The unit spawn-failure test
 exercises the private `spawn_scan` seam with a nonexistent program (an
 in-process PATH mutation would race concurrent scan tests); the real
 spawn failure is verified end-to-end above with an empty `PATH`.
+
+## Post-scan simplify pass (2026-09-06)
+
+Three-lane review (reuse / quality / efficiency) of the scan-hook diff
+(`21445ab`); quality lane re-verified the whole contract against the real
+binary (invocation shape, dedupe, fail-closed placement, vocabulary, JSON
+purity, `--dry-run` scans, scan-free doctor/preview, audit order — all
+match ADR-0004/DESIGN/feature-013). Accepted and fixed: the
+`scan_audit_event` test helper violated the recorded explicit-scripts
+convention (parameterizing it was rejected by the Path B simplify pass) —
+removed, both call sites inline the read-audit chain like the five
+pre-existing sites; `scan_skill` pass-through wrapper deleted (resolve
+calls the recorded `spawn_scan` seam directly); the stderr excerpt strips
+CR as well as collapsing LF (CRLF scanner stderr kept rendering as a
+carriage return inside the "single-line" message — regression-tested);
+ADR-0004 drifted from the shipped code (its evidence quoted the abandoned
+`printf '%s' "$1" > record` scanner and never stated the no-`$1`-in-config
+rule PROGRESS attributed to it) — corrected, and its consequences now
+record the unbounded v1 output capture (TD-002) and the point-in-time
+scan verdict / live symlink source / read-only-scanner expectation; stray
+double blank line removed. Rejected: a parameterized `audit_event` helper
+(prior explicit rejection), `twin_stdout` reuse in the new tests (dominant
+convention is the inline chain), lock scan enum-izing and `prepare_run`
+param bundling (recorded rejections), bounded capture plumbing now
+(feature-scale change; TD-002 records the payoff condition). Verified:
+`cargo test` (105 unit + 30 integration) and
+`cargo test --no-default-features` (90 + 30) green, zero warnings; CR
+collapse asserted at unit level and the fail-closed message re-checked
+against the rebuilt binary.
 
 ## Path B milestone verification (2026-09-06, this machine)
 
