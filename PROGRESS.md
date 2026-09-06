@@ -19,6 +19,19 @@ Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
 prebuilt Release binaries deferred.
 
+## Distribution verification (2026-09-06, this machine)
+
+Repo created and pushed with `gh` (account `nathanpt`, `repo` scope):
+`main` + tag `v0.1.0` at `d3b8225`. Clean-root install of the exact
+blessed command — `cargo install --locked --git
+https://github.com/nathanpt/lunchbox --tag v0.1.0 --root /tmp/lbx-dist` —
+succeeded; installed binary reports `lunchbox 0.1.0` (tagged commit
+`d3b8225`), and `adapters` detects the real pi 0.84.4 / omp 18.1.11 with
+selftests ok. Pre-push: `cargo test` (105+30) and
+`cargo test --no-default-features` (90+30) green, zero warnings;
+`cargo package --list` accepted the manifest (license/repository/readme/
+rust-version present). ADR-0005 confirmation evidence satisfied.
+
 ## Scan-hook milestone verification (2026-09-06, this machine)
 
 Exec-plan: `docs/exec-plans/completed/scan-hook-milestone.md`; contract in
