@@ -1,24 +1,34 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-06 (TUI milestone complete)
+Last updated: 2026-09-06 (v1 exit bar passed)
 
 ## Current repository state
 
-Phase 1 + TUI milestone implemented: core CLI + Pi Path A adapter
-(features 001, 002, 007) and the four v1 TUI screens behind cargo
-features — doctor, token-cost preview, skill picker, policy review
-(features 003–006), each with a `--json` twin and headless snapshot
-tests. `src/tui/` (terminal, snap, doctor, preview, picker, policy) with
-a state/render/handle_event split; `tui` subcommand parses in every
-build and fails closed without the features. Default features include
-both TUI features; `--no-default-features` ships the CLI-only binary.
-82 unit + 21 integration tests green in both configurations. Features
-001–007 pass. Branch `main`; tree clean after each phase commit.
+v1 exit bar met. Phase 1 + TUI milestone + both simplify passes: core
+CLI, Pi Path A adapter, and the four v1 TUI screens behind cargo
+features, each with a `--json` twin and headless snapshot tests;
+`--no-default-features` ships the CLI-only binary and the `tui`
+subcommand fails closed there. 84 unit + 21 integration tests green in
+both configurations. **Features 001–008 all pass.** Branch `main`;
+tree clean after each phase commit.
 
-Not yet implemented (per DESIGN §22/§23): v1 exit bar human walkthrough
-(feature-008), Omp Path A adapter, Path B run-local agents, `--from`
-multi-worker manifests, scan-command hook, `skills/lunchbox/` driver
-Skill.
+Remaining for v1 proper (DESIGN §22 Finish v1/§25): the README
+(one-liner, `cargo install --locked --git` install, gif-script,
+compose-with-pantry note). After v1: Omp Path A adapter, Path B
+run-local agents, `--from` multi-worker manifests, scan-command hook,
+`skills/lunchbox/` driver Skill. Work paused here at the user's request
+(2026-09-06); no next feature started.
+
+## v1 exit bar walkthrough (feature-008, 2026-09-06)
+
+Step 1 (features 001–007 pass): proven by `cargo test` and
+`cargo test --no-default-features` in both simplify-pass runs (84 unit +
+21 integration each, zero warnings). Step 2 (human walkthrough):
+performed by the user in a real terminal against real state on
+2026-09-06 — doctor on real dirs, picker → start → finish, token
+preview, and a policy edit persisting to the project layer in a scratch
+project (keeping the global layer untouched); user verdict: "all four
+screens behaved". Step 3: this record.
 
 ## TUI milestone verification (2026-09-06, this machine)
 
@@ -136,8 +146,7 @@ None in flight.
 
 ## Next useful move
 
-Feature-008 (v1 exit bar): the scripted MVP CLI loop re-verified, then
-the human walkthrough of all four TUI screens against real state —
-doctor on real dirs, picker → start → finish, policy edit persisting to
-the right layer — recorded here with date. After the exit bar: Omp
-Path A adapter (DESIGN §23 step 10), then Path B run-local agents.
+None in flight — work paused at the user's request after the v1 exit
+bar. When resumed: the README to finish v1 (DESIGN §22/§25), then Omp
+Path A adapter (DESIGN §23 step 10; probe its discovery-off keys first
+per the blocker table), then Path B run-local agents.

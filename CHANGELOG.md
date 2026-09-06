@@ -51,3 +51,12 @@ edits that a user would not notice do not belong here.
   `prepare_run` extraction from `start` (no behavior change; reused by
   the picker). ADR-0002 records the dependency decisions. Features
   003, 004, 005, 006 pass.
+
+### v1 exit bar
+
+- 2026-09-06 — Feature-008 passed: features 001–007 green in both
+  feature configurations, and a human walkthrough of all four TUI
+  screens succeeded against real state (doctor, picker → start →
+  finish, preview, policy edit persisting to the project layer).
+  Recorded in PROGRESS.md. v1 now awaits only the README
+  (DESIGN §22/§25).
