@@ -81,6 +81,7 @@ impl PickerState {
             &self.libraries,
             &[],
             false,
+            false,
         ) {
             Ok(run) => {
                 self.status = format!("run {} mounted ({})", run.run_id, run.mount_mode.as_str());

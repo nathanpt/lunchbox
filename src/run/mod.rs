@@ -263,7 +263,7 @@ pub fn build_lock(
                 name: skill.name.clone(),
                 source: skill.source.clone(),
                 hash: skill.hash.clone(),
-                scan: "pass".to_string(),
+                scan: skill.scan.clone(),
                 description_tokens: skill.description_tokens,
                 workers: workers
                     .iter()
@@ -307,6 +307,7 @@ pub fn prepare_run(
     libraries: &[PathBuf],
     harness_argv: &[String],
     use_packs: bool,
+    override_scan: bool,
 ) -> Result<PreparedRun> {
     let mut pins: Vec<String> = Vec::new();
     for worker in &workers {
@@ -316,7 +317,7 @@ pub fn prepare_run(
             }
         }
     }
-    let locked = crate::resolve::resolve(&pins, cfg, libraries)?;
+    let locked = crate::resolve::resolve(&pins, cfg, libraries, override_scan)?;
     let workers = normalize_packs(workers, &locked)?;
     crate::resolve::enforce_worker_budget(&workers, &locked, max_menu_tokens, cfg.fail_on_budget)?;
     let run_id = new_run_id()?;
@@ -413,6 +414,18 @@ fn mount_run(
             "skills": locked.iter().map(|s| json!({"name": s.name, "hash": s.hash})).collect::<Vec<_>>(),
         }),
     )?;
+    if !cfg.scan_command.is_empty() {
+        append_audit(
+            run_dir,
+            run_id,
+            json!({
+                "event": "scan",
+                "command": cfg.scan_command,
+                "skills": locked.iter().map(|l| json!({"name": l.name, "scan": l.scan})).collect::<Vec<_>>(),
+                "override": locked.iter().any(|l| l.scan == "overridden"),
+            }),
+        )?;
+    }
     append_audit(
         run_dir,
         run_id,
@@ -709,6 +722,7 @@ mod tests {
                 name: name.to_string(),
                 source: package,
                 hash: format!("sha256:{name}"),
+                scan: "none".to_string(),
                 description_tokens: tokens,
             }
         };
@@ -775,7 +789,7 @@ mod tests {
         write_lock(&run_dir, &lock).unwrap();
         let text = fs::read_to_string(run_dir.join("lunchbox.lock")).unwrap();
         assert!(text.contains("[[skills]]"));
-        assert!(text.contains("scan = \"pass\""));
+        assert!(text.contains("scan = \"none\""));
         assert!(text.contains("workers = [\"default\"]"));
         let back = read_lock(&run_dir).unwrap();
         assert_eq!(back, lock);

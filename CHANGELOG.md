@@ -96,3 +96,20 @@ edits that a user would not notice do not belong here.
   `harness_argv` regenerate per run; `--skill` + `--from` are mutually
   exclusive; `--adapter`/`--task` flags beat manifest fields; manifest
   `[budget]` beats config. ADR-0003 records the semantics.
+
+### Added (scan-hook milestone)
+
+- 2026-09-06 — Feature-013 passed. A configured `scan_command` now gates
+  every start: it runs once per locked skill, pre-mount on the pantry
+  source, as a shell string — `sh -c '<scan_command> "$1"' sh <source>` —
+  so arguments, quoting, and redirections work naturally and the package
+  source path is appended as the final quoted argument. Non-zero exit
+  fails closed (skill, command, exit code, and a bounded stderr excerpt
+  named; no run dir left behind); `--override-scan` proceeds past a
+  failure, prints a warning, and audits it — a CLI-only flag the TUI
+  picker cannot set. The lock's `scan` field records the truth: `pass`,
+  `none` (no scanner configured), or `overridden` — `fail` never appears
+  because a failed scan without override aborts before the lock exists.
+  Scanner stdout/stderr is captured, keeping `start --json` one parseable
+  line, and a `scan` audit event (command, per-skill results, override)
+  follows `resolved`. ADR-0004 records the contract.

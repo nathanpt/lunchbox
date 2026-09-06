@@ -38,8 +38,9 @@ argv → config (two-layer merge) → resolve (pins → Locked)
 - `src/library/` + `src/hash/` — Skill identity (frontmatter name, else
   directory name) and the canonical tree hash (golden-tested).
 - `src/resolve/` — pin expansion and the policy gates (hash match, deny,
-  allow, missing `SKILL.md`, scan hook refusal, token budget) in DESIGN
-  §10 order. Fail closed.
+  allow, missing `SKILL.md`, scan hook — a configured `scan_command` runs
+  per locked skill pre-mount per ADR-0004 and non-zero exit fails closed
+  unless `--override-scan`, token budget) in DESIGN §10 order. Fail closed.
 - `src/mount/` — symlink per package into `workdir/<name>` (CLI form) or per
   worker into `workdir/packs/<worker>/<name>` (`--from` form, ADR-0003); any
   symlink failure switches the whole run to uniform copy mode; copy mode
@@ -69,10 +70,11 @@ argv → config (two-layer merge) → resolve (pins → Locked)
   cargo feature, per DESIGN §21.
 - Data storage: run state only, under `runs_dir` (default
   `~/.lunchbox/runs/<run_id>/`): `manifest.toml`, `lunchbox.lock`,
-  `workdir/`, `audit.jsonl`, `result.json`, `pid` when a child is
-  spawned. Formats and locations are fixed by DESIGN §7/§9/§18 (settled
-  at the 2026-09-06 design review); schema changes need a new DESIGN
-  revision, not silent drift.
+  `workdir/`, `audit.jsonl` (`resolved` → `scan` when a scanner is
+  configured → `mounted` → `agents` → `spawn` → `unmounted`), `result.json`,
+  `pid` when a child is spawned. Formats and locations are fixed by DESIGN
+  §7/§9/§18 (settled at the 2026-09-06 design review); schema changes need
+  a new DESIGN revision, not silent drift.
 - Lunchbox never writes into standing skill or agent directories
   (DESIGN §20.2).
 

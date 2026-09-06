@@ -1,20 +1,56 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-06 (Path B milestone)
+Last updated: 2026-09-06 (scan-hook milestone)
 
 ## Current repository state
 
-v1 + Path B complete. Phase 1 + TUI milestone + two simplify passes + the
-README/Omp milestone + the Path B milestone: core CLI, Pi and Omp Path A
-adapters, the four v1 TUI screens behind cargo features, the DESIGN §25
-README, `--from manifest.toml` multi-worker runs with per-worker packs, and
-Path B run-local agent files (print mode, both adapters). 98 unit + 26
-integration tests green in the default configuration, 83 + 26 with
-`--no-default-features`, zero warnings in both. **Features 001–012 all
-pass.** Branch `main`; tree clean after each phase commit.
+v1 + Path B + scan hook complete. Phase 1 + TUI milestone + two simplify
+passes + the README/Omp milestone + the Path B milestone + the scan-hook
+milestone: core CLI, Pi and Omp Path A adapters, the four v1 TUI screens
+behind cargo features, the DESIGN §25 README, `--from manifest.toml`
+multi-worker runs with per-worker packs, Path B run-local agent files
+(print mode, both adapters), and the `scan_command` policy gate with
+`--override-scan` (ADR-0004). 104 unit + 30 integration tests green in the
+default configuration, 89 + 30 with `--no-default-features`, zero warnings
+in both. **Features 001–013 all pass.** Branch `main`; tree clean after
+each phase commit.
 
-Next (DESIGN §22 "Next"): scan-command hook, `skills/lunchbox/` driver
-Skill.
+Next (DESIGN §22 "Next"): `skills/lunchbox/` driver Skill.
+
+## Scan-hook milestone verification (2026-09-06, this machine)
+
+Exec-plan: `docs/exec-plans/completed/scan-hook-milestone.md`; contract in
+ADR-0004 (`docs/decisions/0004-scan-hook-contract.md`). Fake tree = temp
+HOME; project `lunchbox.toml` in a scratch cwd supplies `scan_command`;
+binary `target/debug/lunchbox`.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 104 unit + 30 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 89 unit + 30 integration, 0 failed, 0 warnings |
+| feature-013 pass | `scan_command = 'exit 0'` → `start --library testdata/skills --skill demo-review --adapter none --json` | exit 0; lock `scan = "pass"`; audit `{"event":"scan","command":"exit 0","skills":[{"name":"demo-review","scan":"pass"}],"override":false}`; `finish` → `unmounted: true` |
+| Invocation shape | `scan_command = 'printf '\''%s'\'' >> $TMP/record'` → single-skill and two-worker `--from` runs | record holds the resolved pantry source path; the two-worker run with `demo-review` in both packs records `demo-review` once (union dedupe); both locks `scan = "pass"` |
+| feature-013 fail closed | `scan_command = 'echo findings >&2; exit 3'` | exit 1, stderr `skill 'demo-review' failed scan_command 'echo findings >&2; exit 3' (exit 3): findings`; `~/.lunchbox/runs` absent (scan runs before run-dir creation) |
+| Spawn failure | same config, `PATH` = empty dir | exit 1, `failed to run scan_command '…': No such file or directory (os error 2)` |
+| feature-013 override | same config + `--override-scan --json` | exit 0; stderr `warning: skill 'demo-review' failed scan_command '…' (overridden by --override-scan)`; lock `scan = "overridden"`; audit `"override":true`; `finish` cleans (`unmounted: true`) |
+| JSON purity | `scan_command = 'echo junk'` → `start --json` | full stdout parses as exactly one JSON object (scanner stdout captured, not inherited) |
+| Default / no drift | no `scan_command` anywhere | lock `scan = "none"`, no scan audit event; `doctor`, `adapters`, `tui preview --json`, and the README-shape `start` human output byte-identical to the pre-change binary (built from HEAD in a scratch worktree); README untouched |
+| Unit gates | resolve tests `scan_*` | pass/none/overridden vocabulary, error names skill+command+`exit 3`+stderr excerpt, spawn-failure bail (integration tests `scan_pass_invokes_scanner_and_locks`, `scan_fail_fails_closed`, `scan_override_proceeds_and_audits`, `scan_json_stays_pure`) |
+
+`doctor`, `tui preview`, and `adapters` never spawn a scanner by design —
+`tokens::preview` does not call `resolve`; confirmed empirically by the
+byte-identical outputs above.
+
+Deviations from the exec-plan, recorded here: the plan's sample recording
+scanner `printf '%s' \"$1\" > record` writes `$1` into the config *and*
+relies on lunchbox appending the package source as the final argument —
+printf then prints both and the record doubles (observed live). Per
+ADR-0004 the config string never references `$1`; the tests use
+`printf '%s' > record` / `printf '%s\n' >> record` and still prove the
+shell-string semantics via the redirection. The unit spawn-failure test
+exercises the private `spawn_scan` seam with a nonexistent program (an
+in-process PATH mutation would race concurrent scan tests); the real
+spawn failure is verified end-to-end above with an empty `PATH`.
 
 ## Path B milestone verification (2026-09-06, this machine)
 
@@ -305,9 +341,7 @@ None in flight.
 
 ## Next useful move
 
-Scan-command hook (DESIGN §22 "Next", §17 policy gate): `resolve` currently
-fail-closes when `scan_command` is configured; wire the optional external
-scanner into the gate with a non-zero exit failing the run, or the
-`skills/lunchbox/` driver Skill. Both adapters' Path B is print mode until a
-harness grows a per-invocation agent-dir override (ADR-0003 records the
-flip condition).
+`skills/lunchbox/` driver Skill (DESIGN §22 "Next", the last v1 item): a
+Skill that drives lunchbox itself so an agent can mount its own sealed
+run. Both adapters' Path B is print mode until a harness grows a
+per-invocation agent-dir override (ADR-0003 records the flip condition).

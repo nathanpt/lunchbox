@@ -179,6 +179,21 @@
       "dependencies": [
         "feature-011"
       ]
+    },
+    {
+      "id": "feature-013",
+      "category": "functional",
+      "description": "scan_command policy gate: a configured scanner runs per locked skill before mount, non-zero exit fails closed, --override-scan is explicit and audited, and the lock records the real per-skill outcome (DESIGN §10/§17)",
+      "steps": [
+        "A configured scan_command runs once per locked skill as `sh -c '<scan_command> \"$1\"' sh <package-source>` before mount; non-zero exit fails the start with the skill, command, and exit code named and no run dir left behind",
+        "--override-scan proceeds past a failed scan, records scan = \"overridden\" for the offending skills, prints a warning, and the audit records both the failure and the override; the TUI picker cannot override",
+        "The lock records scan = \"pass\" only when a scanner exited zero, \"none\" when scan_command is empty, and \"overridden\" after an override; scanner output is captured so start --json stays a single JSON line; doctor and tui preview never scan"
+      ],
+      "passes": true,
+      "priority": 11,
+      "dependencies": [
+        "feature-001"
+      ]
     }
   ]
 }

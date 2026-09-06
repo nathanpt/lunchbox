@@ -169,7 +169,10 @@ library_paths = [
 ]
 default_adapter = "pi"
 mount_mode = "symlink"          # symlink | copy
-scan_command = ""               # optional external scanner; empty = hash-only gate
+scan_command = ""               # optional external scanner; empty = hash-only gate.
+                                # Runs as a shell string: sh -c '<scan_command> "$1"' sh <package-source>
+                                # — arguments and redirection allowed; the package source path is
+                                # appended as the final quoted argument (ADR-0004)
 allow = []                      # empty = allow any name in the library
 deny = []
 max_menu_tokens = 2000          # soft warn; hard fail if fail_on_budget = true
@@ -280,6 +283,11 @@ workers = ["scout"]
 
 Lock is the only thing teardown and audit trust. Re-resolve on `start`, never mutate a lock after mount.
 
+Lock `scan` vocabulary (ADR-0004): `pass` — the scanner exited zero;
+`none` — no `scan_command` configured; `overridden` — the scanner failed
+and `--override-scan` was given. `fail` never appears in a lock: a failed
+scan without override aborts the run before the lock is written (§20.3).
+
 ---
 
 ## 10. Resolver rules
@@ -289,7 +297,7 @@ Lock is the only thing teardown and audit trust. Re-resolve on `start`, never mu
 3. If pin includes a hash and it does not match → fail.
 4. If name is on `deny` → fail.
 5. If `allow` is non-empty and name is not on it → fail.
-6. Run scan hook if configured; non-zero exit → fail (unless `--override-scan`, which must be explicit and audited).
+6. Run the scan hook if configured, once per locked skill pre-mount on the pantry source: `sh -c '<scan_command> "$1"' sh <source>`. Non-zero exit → fail (unless `--override-scan`, which must be explicit and audited) (ADR-0004).
 7. Estimate description tokens for the union of each worker’s pack.
 8. If `fail_on_budget` and any worker menu exceeds cap → fail.
 9. Write lock, then mount.
@@ -475,7 +483,7 @@ Binary name: `lunchbox`. Short alias `lbx` if you add one; do not block on it.
 
 ```text
 lunchbox doctor [--adapter pi|omp] [--json]
-lunchbox start [options] [-- <harness argv>]
+lunchbox start [options] [--override-scan] [-- <harness argv>]
 lunchbox status [run_id]
 lunchbox finish [run_id]
 lunchbox abort [run_id]
@@ -594,11 +602,16 @@ Fail closed. No silent fallback to “just start Pi with defaults.”
 
 ```json
 {"ts":"2026-09-05T15:30:12Z","run_id":"lbx_…","event":"resolved","skills":[{"name":"code-review","hash":"sha256:6f2c…"}]}
+{"ts":"…","event":"scan","command":"semgrep-scan","skills":[{"name":"code-review","scan":"pass"}],"override":false}
 {"ts":"…","event":"mounted","mode":"symlink","workdir":"…"}
 {"ts":"…","event":"agents","adapter":"pi","files":["reviewer.md"],"loaded":false}
 {"ts":"…","event":"spawn","adapter":"pi","argv":["pi","--no-skills","--skill","…"]}
 {"ts":"…","event":"unmounted","reason":"finish"}
 ```
+
+The `scan` event is written after `resolved` and only when `scan_command`
+is non-empty; `override` is true when any skill was mounted despite a
+failed scan via `--override-scan` (ADR-0004).
 
 `result.json`:
 

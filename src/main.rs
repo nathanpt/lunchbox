@@ -118,6 +118,8 @@ struct StartArgs {
     #[arg(long = "from", value_name = "PATH")]
     from: Option<String>,
     #[arg(long)]
+    override_scan: bool,
+    #[arg(long)]
     json: bool,
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     harness_argv: Vec<String>,
@@ -393,6 +395,7 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
         &libraries,
         &harness_argv,
         use_packs,
+        args.override_scan,
     )?;
     let run_dir = prepared.run_dir.clone();
     let outcome = start_run(

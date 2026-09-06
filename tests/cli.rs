@@ -487,6 +487,189 @@ fn hash_pin_roundtrip_and_mismatch() {
         .stderr(predicates::str::contains("hash mismatch"));
 }
 
+fn project_scan_config(cwd: &Path, scan_command: &str) {
+    fs::write(
+        cwd.join("lunchbox.toml"),
+        format!("scan_command = '''{scan_command}'''\n"),
+    )
+    .unwrap();
+}
+
+fn scan_audit_event(run: &Path) -> Value {
+    let audit = fs::read_to_string(run.join("audit.jsonl")).unwrap();
+    audit
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .find(|event: &Value| event["event"] == "scan")
+        .expect("audit must contain a scan event")
+}
+
+#[test]
+fn scan_pass_invokes_scanner_and_locks() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    let record = cwd.path().join("scan-record.txt");
+    project_scan_config(cwd.path(), &format!("printf '%s' > {}", record.display()));
+    let output = lbx()
+        .args([
+            "start",
+            "--library",
+            skills.to_str().unwrap(),
+            "--skill",
+            "demo-review",
+            "--adapter",
+            "none",
+            "--json",
+        ])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    let run_id = report["run_id"].as_str().unwrap().to_string();
+    let recorded = fs::read_to_string(&record).unwrap();
+    assert_eq!(
+        recorded,
+        skills.join("demo-review").display().to_string(),
+        "scanner must receive the pantry source path as its final argument"
+    );
+    let run = only_run(home.path());
+    let lock: Value = toml::from_str(&fs::read_to_string(run.join("lunchbox.lock")).unwrap()).unwrap();
+    assert_eq!(lock["skills"][0]["scan"], serde_json::json!("pass"));
+    let scan = scan_audit_event(&run);
+    assert!(scan["command"].as_str().unwrap().contains("printf '%s'"));
+    assert_eq!(
+        scan["skills"],
+        serde_json::json!([{"name": "demo-review", "scan": "pass"}])
+    );
+    assert_eq!(scan["override"], serde_json::json!(false));
+    lbx()
+        .args(["finish", &run_id])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn scan_fail_fails_closed() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    project_scan_config(cwd.path(), "echo findings >&2; exit 3");
+    lbx()
+        .args([
+            "start",
+            "--library",
+            skills.to_str().unwrap(),
+            "--skill",
+            "demo-review",
+            "--adapter",
+            "none",
+        ])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("demo-review"))
+        .stderr(predicates::str::contains(
+            "scan_command 'echo findings >&2; exit 3'",
+        ))
+        .stderr(predicates::str::contains("exit 3"))
+        .stderr(predicates::str::contains("findings"));
+    let runs: Vec<_> = fs::read_dir(runs_dir(home.path()))
+        .map(|entries| entries.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(runs.is_empty(), "failed scan must leave no run dir: {runs:?}");
+}
+
+#[test]
+fn scan_override_proceeds_and_audits() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    project_scan_config(cwd.path(), "echo findings >&2; exit 3");
+    let output = lbx()
+        .args([
+            "start",
+            "--library",
+            skills.to_str().unwrap(),
+            "--skill",
+            "demo-review",
+            "--adapter",
+            "none",
+            "--override-scan",
+            "--json",
+        ])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("warning: skill 'demo-review' failed scan_command"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("overridden by --override-scan"), "{stderr}");
+    let run = only_run(home.path());
+    let lock: Value = toml::from_str(&fs::read_to_string(run.join("lunchbox.lock")).unwrap()).unwrap();
+    assert_eq!(lock["skills"][0]["scan"], serde_json::json!("overridden"));
+    let scan = scan_audit_event(&run);
+    assert_eq!(
+        scan["skills"],
+        serde_json::json!([{"name": "demo-review", "scan": "overridden"}])
+    );
+    assert_eq!(scan["override"], serde_json::json!(true));
+    lbx()
+        .args(["finish"])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    assert!(!run.join("workdir").exists());
+}
+
+#[test]
+fn scan_json_stays_pure() {
+    let home = scratch();
+    let skills = demo_skills();
+    let cwd = scratch();
+    project_scan_config(cwd.path(), "echo junk");
+    let output = lbx()
+        .args([
+            "start",
+            "--library",
+            skills.to_str().unwrap(),
+            "--skill",
+            "demo-review",
+            "--adapter",
+            "none",
+            "--json",
+        ])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&output)
+        .expect("start --json stdout must be exactly one parseable JSON object");
+    assert!(report.get("run_id").is_some());
+    lbx()
+        .args(["finish"])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+}
+
 fn two_worker_manifest(dir: &Path, adapter: &str, reviewer_description: bool) -> PathBuf {
     let path = dir.join("m.toml");
     let description = if reviewer_description {

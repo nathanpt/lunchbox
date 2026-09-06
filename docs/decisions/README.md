@@ -19,6 +19,7 @@ user-visible behavior.
 - `0001` — Rust, unconditional: [0001-rust-unconditional.md](0001-rust-unconditional.md) (accepted 2026-09-06).
 - `0002` — TUI dependencies: [0002-tui-dependencies.md](0002-tui-dependencies.md) (accepted 2026-09-06).
 - `0003` — Path B pack layout and `--from` manifest semantics: [0003-path-b-packs-and-from-semantics.md](0003-path-b-packs-and-from-semantics.md) (accepted 2026-09-06).
+- `0004` — Scan-hook invocation, lock vocabulary, and override semantics: [0004-scan-hook-contract.md](0004-scan-hook-contract.md) (accepted 2026-09-06).
 
 ## Template
 

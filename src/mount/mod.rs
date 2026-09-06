@@ -170,6 +170,7 @@ mod tests {
             name: name.to_string(),
             source: source.to_path_buf(),
             hash: "sha256:0".to_string(),
+            scan: "none".to_string(),
             description_tokens: 1,
         }]
     }
@@ -274,12 +275,14 @@ mod tests {
                 name: "demo-review".to_string(),
                 source: review.clone(),
                 hash: "sha256:r".to_string(),
+                scan: "none".to_string(),
                 description_tokens: 14,
             },
             Locked {
                 name: "demo-scan".to_string(),
                 source: scan.clone(),
                 hash: "sha256:s".to_string(),
+                scan: "none".to_string(),
                 description_tokens: 13,
             },
         ];
