@@ -12,12 +12,19 @@ pub type Screen = Terminal<CrosstermBackend<Stdout>>;
 pub fn install() -> Result<Screen> {
     let _ = color_eyre::install();
     enable_raw_mode().context("failed to enable raw mode")?;
+    let screen = open_screen();
+    if screen.is_err() {
+        let _ = disable_raw_mode();
+    }
+    screen
+}
+
+fn open_screen() -> Result<Screen> {
     crossterm::execute!(io::stdout(), EnterAlternateScreen)
         .context("failed to enter alternate screen")?;
     Terminal::new(CrosstermBackend::new(io::stdout()))
         .context("failed to open terminal")
 }
-
 pub struct Restore;
 
 impl Drop for Restore {

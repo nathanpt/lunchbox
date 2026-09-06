@@ -104,11 +104,11 @@ pub struct ListedSkill {
 }
 
 #[cfg(any(feature = "tui-doctor", feature = "tui-menu"))]
-pub fn scan_roots(roots: &[PathBuf]) -> Vec<ListedSkill> {
+pub fn scan_roots(roots: &[PathBuf]) -> Result<Vec<ListedSkill>> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut listed = Vec::new();
     for root in roots {
-        for skill in scan_root(root).unwrap_or_default() {
+        for skill in scan_root(root)? {
             if seen.insert(skill.name.clone()) {
                 listed.push(ListedSkill {
                     tokens: crate::tokens::estimate(&skill.name, &skill.description),
@@ -118,7 +118,7 @@ pub fn scan_roots(roots: &[PathBuf]) -> Vec<ListedSkill> {
             }
         }
     }
-    listed
+    Ok(listed)
 }
 
 fn list_valid_packages(root: &Path) -> Result<Vec<FoundSkill>> {

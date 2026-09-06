@@ -1,5 +1,3 @@
-#[cfg(feature = "tui-menu")]
-use anyhow::bail;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -95,16 +93,33 @@ pub struct LayerReport {
     pub deny: Vec<String>,
 }
 
-pub fn global_path() -> PathBuf {
-    match env::var_os("HOME") {
-        Some(home) => PathBuf::from(home).join(".lunchbox").join("config.toml"),
-        None => PathBuf::from(".lunchbox").join("config.toml"),
+#[cfg(feature = "tui-menu")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum List {
+    Allow,
+    Deny,
+}
+
+#[cfg(feature = "tui-menu")]
+impl List {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            List::Allow => "allow",
+            List::Deny => "deny",
+        }
     }
+}
+
+pub fn global_path() -> Result<PathBuf> {
+    let home = env::var_os("HOME")
+        .context("HOME is not set; cannot locate the global lunchbox config")?;
+    Ok(PathBuf::from(home).join(".lunchbox").join("config.toml"))
 }
 
 pub fn project_path() -> PathBuf {
     PathBuf::from("lunchbox.toml")
 }
+
 #[cfg(feature = "tui-menu")]
 pub fn layer_report(path: &Path) -> Result<LayerReport> {
     let layer = read_layer(path)?;
@@ -117,10 +132,7 @@ pub fn layer_report(path: &Path) -> Result<LayerReport> {
 }
 
 #[cfg(feature = "tui-menu")]
-pub fn append_layer_entry(path: &Path, list: &str, entry: &str) -> Result<()> {
-    if list != "allow" && list != "deny" {
-        bail!("unknown list '{list}' (expected allow or deny)");
-    }
+pub fn append_layer_entry(path: &Path, list: List, entry: &str) -> Result<()> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -129,13 +141,14 @@ pub fn append_layer_entry(path: &Path, list: &str, entry: &str) -> Result<()> {
     let mut document: toml_edit::DocumentMut = text
         .parse()
         .with_context(|| format!("failed to parse config at {}", path.display()))?;
+    let key = list.as_str();
     let item = document
         .as_table_mut()
-        .entry(list)
+        .entry(key)
         .or_insert_with(|| toml_edit::Item::Value(toml_edit::Value::Array(Default::default())));
     let entries = item
         .as_array_mut()
-        .with_context(|| format!("'{list}' in {} is not a list", path.display()))?;
+        .with_context(|| format!("'{key}' in {} is not a list", path.display()))?;
     if entries.iter().any(|value| value.as_str() == Some(entry)) {
         return Ok(());
     }
@@ -146,8 +159,14 @@ pub fn append_layer_entry(path: &Path, list: &str, entry: &str) -> Result<()> {
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
     }
-    fs::write(path, document.to_string())
-        .with_context(|| format!("failed to write {}", path.display()))
+    let staged = path.with_extension(format!(
+        "{}.new",
+        path.extension().unwrap_or_default().to_string_lossy()
+    ));
+    fs::write(&staged, document.to_string())
+        .with_context(|| format!("failed to write {}", staged.display()))?;
+    fs::rename(&staged, path)
+        .with_context(|| format!("failed to replace {}", path.display()))
 }
 
 impl Config {
@@ -155,7 +174,7 @@ impl Config {
         let home = env::var_os("HOME")
             .map(PathBuf::from)
             .context("HOME is not set; cannot locate the global lunchbox config")?;
-        let global = read_layer(&global_path())?;
+        let global = read_layer(&global_path()?)?;
         let project = read_layer(&project_path())?;
         let mut config = merge(global, project);
         config.expand_paths(&home);

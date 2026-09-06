@@ -95,6 +95,34 @@ use the checked-in `testdata/skills` fixtures and a shared mock-PATH
 helper. Rejected: `kill -0` polling via libc (dep weight), per-pin scan
 caching (CLI scale), lock/status stringly-typing (TOML schema contract).
 
+## Post-TUI simplify pass (2026-09-06)
+
+Three-lane review (reuse / quality / efficiency) of the TUI milestone diff
+(`add3404`); 12 findings accepted and fixed: picker teardown now fails
+closed (a failed finish keeps the run handle for retry; quitting with an
+unmountable run errors non-zero instead of leaking silently — regression
+tested via a read-only run dir); `library::scan_roots` propagates scan
+errors so the picker twin fails closed on duplicate-name/IO-broken roots
+instead of listing `{"library":[]}` exit 0; `tui preview` no longer tells
+hash-pin users to "pin by hash" (accurate name-only message) and the
+interactive screen preselects `--skill` pins like its `--json` twin;
+resolve's not-found error construction is shared with `tokens::preview`;
+`append_layer_entry` writes via temp-file + rename (no truncate-in-place
+of user-authored TOML); `tui policy` loads each layer once
+(`PolicyState::load` delegates to `from_reports`); `global_path()` bails
+without HOME instead of returning a relative path; `cmd_doctor` no longer
+computes fattest/duplicates on the JSON path; `terminal::install`
+releases raw mode when a later setup step fails; integration probes are
+cached per feature group (`LazyLock`) instead of one spawn per test;
+`config::List` replaces the stringly "allow"/"deny" selector and
+`WhichLayer::as_str` replaces Debug-format headers; the demo-tree fixture
+is shared by preview/picker tests. Deferred to TD-002: moving
+`prepare_run` into `src/run/`. Verified: `cargo test` (84 unit + 21
+integration) and `cargo test --no-default-features` (69 + 21) green with
+zero warnings; hash-pin/tag-pin messages, dup-root picker failure,
+doctor twin byte-identity, no-HOME fail-closed, atomic policy write, and
+deny-after-write all exercised against the built binary.
+
 ## Active work
 
 None in flight.

@@ -144,16 +144,16 @@ fn expand_pin(pin: &Pin, roots: &[PathBuf]) -> Result<Expanded> {
             }
         }
     }
+    Err(not_found_error(&pin.name, roots))
+}
+
+pub(crate) fn not_found_error(name: &str, roots: &[PathBuf]) -> anyhow::Error {
     let searched = roots
         .iter()
         .map(|r| r.display().to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    bail!(
-        "skill '{}' not found in any library root (searched: {})",
-        pin.name,
-        searched
-    );
+    anyhow::anyhow!("skill '{name}' not found in any library root (searched: {searched})")
 }
 
 struct Expanded {

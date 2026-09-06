@@ -54,23 +54,35 @@ fn twin_stdout(args: &[&str], home: &Path, cwd: &Path) -> Vec<u8> {
         .clone()
 }
 
-fn tui_screens_available() -> bool {
+fn probe_screen(args: &[&str]) -> bool {
     let home = scratch();
     let cwd = scratch();
     let output = lbx()
-        .args(["tui", "policy", "--json"])
+        .args(args)
         .env("HOME", home.path())
         .current_dir(cwd.path())
         .output()
-        .expect("failed to run lunchbox tui policy --json probe");
+        .unwrap_or_else(|error| panic!("failed to run lunchbox {:?} probe: {error}", args));
     !String::from_utf8_lossy(&output.stderr).contains("no TUI screens")
+}
+
+fn doctor_screens_available() -> bool {
+    static AVAILABLE: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| probe_screen(&["tui", "doctor", "--json"]));
+    *AVAILABLE
+}
+
+fn menu_screens_available() -> bool {
+    static AVAILABLE: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| probe_screen(&["tui", "policy", "--json"]));
+    *AVAILABLE
 }
 
 
 #[test]
 fn tui_doctor_json_twin_matches_doctor_json() {
     let home = fake_tree_home();
-    if !tui_screens_available() { return; }
+    if !doctor_screens_available() { return; }
     let cwd = scratch();
     let a = twin_stdout(&["tui", "doctor", "--json"], home.path(), cwd.path());
     let b = twin_stdout(&["doctor", "--json"], home.path(), cwd.path());
@@ -84,7 +96,7 @@ fn tui_doctor_json_twin_matches_doctor_json() {
 #[test]
 fn tui_preview_json_twin_reports_estimates() {
     let home = fake_tree_home();
-    if !tui_screens_available() { return; }
+    if !doctor_screens_available() { return; }
     let cwd = scratch();
     let output = twin_stdout(
         &[
@@ -118,7 +130,7 @@ fn tui_preview_json_twin_reports_estimates() {
 #[test]
 fn tui_preview_json_rejects_tag_pins_like_start() {
     let home = fake_tree_home();
-    if !tui_screens_available() { return; }
+    if !doctor_screens_available() { return; }
     let cwd = scratch();
     lbx()
         .args(["tui", "preview", "--json", "--skill", "demo-review@latest"])
@@ -132,7 +144,7 @@ fn tui_preview_json_rejects_tag_pins_like_start() {
 #[test]
 fn tui_picker_json_twin_lists_library() {
     let home = scratch();
-    if !tui_screens_available() { return; }
+    if !menu_screens_available() { return; }
     let cwd = scratch();
     let skills = demo_skills();
     let output = twin_stdout(
@@ -157,7 +169,7 @@ fn tui_picker_json_twin_lists_library() {
 #[test]
 fn tui_policy_json_twin_reports_layers() {
     let home = scratch();
-    if !tui_screens_available() { return; }
+    if !menu_screens_available() { return; }
     let cwd = scratch();
     fs::create_dir_all(home.path().join(".lunchbox")).unwrap();
     fs::write(
@@ -178,7 +190,7 @@ fn tui_policy_json_twin_reports_layers() {
 
 #[test]
 fn feature_006_policy_edit_persists_to_project_layer_and_denies() {
-    if !tui_screens_available() { return; }
+    if !menu_screens_available() { return; }
     let home = scratch();
     let cwd = scratch();
     fs::write(

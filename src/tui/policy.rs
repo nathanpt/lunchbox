@@ -1,4 +1,4 @@
-use crate::config::{self, LayerReport};
+use crate::config::{self, LayerReport, List};
 use crate::tui::terminal::{self, Restore};
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -19,17 +19,20 @@ pub enum WhichLayer {
     Project,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WhichList {
-    Allow,
-    Deny,
+impl WhichLayer {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WhichLayer::Global => "global",
+            WhichLayer::Project => "project",
+        }
+    }
 }
 
 pub struct PolicyState {
     pub global: LayerReport,
     pub project: LayerReport,
     pub layer: WhichLayer,
-    pub list: WhichList,
+    pub list: List,
     pub cursor: usize,
     pub input: String,
     pub input_mode: bool,
@@ -38,27 +41,18 @@ pub struct PolicyState {
 
 impl PolicyState {
     pub fn load() -> Result<Self> {
-        let global = config::layer_report(&config::global_path())?;
-        let project = config::layer_report(&config::project_path())?;
-        Ok(PolicyState {
-            global,
-            project,
-            layer: WhichLayer::Project,
-            list: WhichList::Deny,
-            cursor: 0,
-            input: String::new(),
-            input_mode: false,
-            status: "add entries with a".to_string(),
-        })
+        Ok(Self::from_reports(
+            config::layer_report(&config::global_path()?)?,
+            config::layer_report(&config::project_path())?,
+        ))
     }
 
-    #[cfg(test)]
     pub fn from_reports(global: LayerReport, project: LayerReport) -> Self {
         PolicyState {
             global,
             project,
             layer: WhichLayer::Project,
-            list: WhichList::Deny,
+            list: List::Deny,
             cursor: 0,
             input: String::new(),
             input_mode: false,
@@ -83,8 +77,8 @@ impl PolicyState {
     fn active_entries(&self) -> &Vec<String> {
         let report = self.active_report();
         match self.list {
-            WhichList::Allow => &report.allow,
-            WhichList::Deny => &report.deny,
+            List::Allow => &report.allow,
+            List::Deny => &report.deny,
         }
     }
 
@@ -100,11 +94,7 @@ impl PolicyState {
             return;
         }
         let path = self.active_path().to_path_buf();
-        let list = match self.list {
-            WhichList::Allow => "allow",
-            WhichList::Deny => "deny",
-        };
-        match config::append_layer_entry(&path, list, &entry) {
+        match config::append_layer_entry(&path, self.list, &entry) {
             Ok(()) => {
                 self.status = format!("wrote {}", path.display());
                 self.input.clear();
@@ -136,11 +126,11 @@ pub fn render(state: &mut PolicyState, frame: &mut Frame, area: Rect) {
         let active = state.layer == which;
         let header = if active {
             Line::from(Span::styled(
-                format!("{which:?}").to_lowercase(),
+                which.as_str(),
                 Style::default().add_modifier(Modifier::BOLD),
             ))
         } else {
-            Line::from(format!("{which:?}").to_lowercase())
+            Line::from(which.as_str())
         };
         let mut lines = vec![
             header,
@@ -148,13 +138,10 @@ pub fn render(state: &mut PolicyState, frame: &mut Frame, area: Rect) {
             Line::from(format!("exists  {}", report.exists)),
         ];
         for (list, entries) in [
-            (WhichList::Allow, &report.allow),
-            (WhichList::Deny, &report.deny),
+            (List::Allow, &report.allow),
+            (List::Deny, &report.deny),
         ] {
-            let label = match list {
-                WhichList::Allow => "allow",
-                WhichList::Deny => "deny",
-            };
+            let label = list.as_str();
             let list_active = active && state.list == list;
             let style = if list_active {
                 Style::default().add_modifier(Modifier::BOLD)
@@ -223,12 +210,12 @@ pub fn handle_event(state: &mut PolicyState, event: &Event) -> Action {
             Action::Continue
         }
         (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
-            state.list = WhichList::Allow;
+            state.list = List::Allow;
             state.clamp_cursor();
             Action::Continue
         }
         (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::NONE) => {
-            state.list = WhichList::Deny;
+            state.list = List::Deny;
             state.clamp_cursor();
             Action::Continue
         }
@@ -335,8 +322,7 @@ mod tests {
         let (global_path, project_path) = layers(root.path());
         let global_before = std::fs::read_to_string(&global_path).unwrap();
         let mut state = state_for(root.path());
-        assert_eq!(state.layer, WhichLayer::Project);
-        assert_eq!(state.list, WhichList::Deny);
+        assert_eq!(state.list, List::Deny);
 
         handle_event(&mut state, &press(KeyCode::Char('a')));
         assert!(state.input_mode);

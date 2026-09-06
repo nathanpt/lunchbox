@@ -27,7 +27,7 @@ pub fn preview(cfg: &Config, roots_extra: &[PathBuf], pins: &[String]) -> Result
     for pin in pins {
         let parsed = crate::resolve::parse_pin(pin)?;
         if parsed.pinned_hash.is_some() {
-            bail!("tag pins are not supported yet; pin by hash (got '{pin}')");
+            bail!("preview pins are name-only; hash pin '{pin}' is only supported by lunchbox start");
         }
         let mut found = None;
         for root in &roots {
@@ -38,16 +38,7 @@ pub fn preview(cfg: &Config, roots_extra: &[PathBuf], pins: &[String]) -> Result
             }
         }
         let Some(found) = found else {
-            let searched = roots
-                .iter()
-                .map(|r| r.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            bail!(
-                "skill '{}' not found in any library root (searched: {})",
-                parsed.name,
-                searched
-            );
+            return Err(crate::resolve::not_found_error(&parsed.name, &roots));
         };
         skills.push(PreviewSkill {
             tokens: estimate(&found.name, &found.description),

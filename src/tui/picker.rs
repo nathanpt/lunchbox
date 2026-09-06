@@ -96,10 +96,12 @@ impl PickerState {
             }
             Err(error) => {
                 self.status = format!("finish failed: {error:#}");
+                self.run = Some(run);
                 Action::Continue
             }
         }
     }
+
 }
 
 pub fn render(state: &mut PickerState, frame: &mut Frame, area: Rect) {
@@ -189,7 +191,15 @@ pub fn run(mut state: PickerState) -> Result<()> {
         })?;
         let event = terminal::next_event()?;
         if let Action::Quit = handle_event(&mut state, &event) {
-            return Ok(());
+            return match state.run.take() {
+                None => Ok(()),
+                Some(run) => Err(anyhow::anyhow!(
+                    "run {} still mounted at {}; finish failed — recover with lunchbox finish {}",
+                    run.run_id,
+                    run.run_dir.display(),
+                    run.run_id
+                )),
+            };
         }
     }
 }
@@ -200,37 +210,21 @@ mod tests {
     use crate::config::Config;
     use crate::library;
     use crate::tui::snap::frame_to_string;
+    use crate::tui::testkit::demo_tree_home;
     use crossterm::event::KeyEvent;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
-    use std::path::PathBuf;
+    use std::os::unix::fs::PermissionsExt;
 
     fn press(code: KeyCode) -> Event {
         Event::Key(KeyEvent::from(code))
-    }
-
-    fn demo_tree_home() -> tempfile::TempDir {
-        let home = tempfile::TempDir::new().unwrap();
-        let global = home.path().join(".agents").join("skills");
-        for name in ["demo-review", "demo-scan"] {
-            let src = std::fs::read_to_string(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("testdata/skills")
-                    .join(name)
-                    .join("SKILL.md"),
-            )
-            .unwrap();
-            std::fs::create_dir_all(global.join(name)).unwrap();
-            std::fs::write(global.join(name).join("SKILL.md"), src).unwrap();
-        }
-        home
     }
 
     fn state_for(home: &std::path::Path) -> PickerState {
         crate::config::with_home(home, || {
             let cfg = Config::load().unwrap();
             let libraries = vec![home.join(".agents").join("skills")];
-            let listing = library::scan_roots(&cfg.search_roots(&libraries));
+            let listing = library::scan_roots(&cfg.search_roots(&libraries)).unwrap();
             PickerState::new(cfg, libraries, listing)
         })
     }
@@ -310,6 +304,59 @@ mod tests {
             Action::Quit
         ));
         assert!(!run_dir.join("workdir").exists(), "quit must not leak a mount");
+        assert!(run_dir.join("result.json").exists());
+    }
+
+    #[test]
+    fn failed_finish_keeps_run_recoverable_and_quit_fails_closed() {
+        let home = demo_tree_home();
+        let runs = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(home.path().join(".lunchbox")).unwrap();
+        std::fs::write(
+            home.path().join(".lunchbox").join("config.toml"),
+            format!("runs_dir = \"{}\"\n", runs.path().display()),
+        )
+        .unwrap();
+        let mut state = state_for(home.path());
+        handle_event(&mut state, &press(KeyCode::Char(' ')));
+        handle_event(&mut state, &press(KeyCode::Down));
+        handle_event(&mut state, &press(KeyCode::Char(' ')));
+        handle_event(&mut state, &press(KeyCode::Char('s')));
+        let run_dir = state.run.as_ref().unwrap().run_dir.clone();
+        assert!(run_dir.join("workdir").exists());
+
+        std::fs::set_permissions(&run_dir, PermissionsExt::from_mode(0o500)).unwrap();
+        assert!(matches!(
+            handle_event(&mut state, &press(KeyCode::Char('f'))),
+            Action::Continue
+        ));
+        assert!(state.run.is_some(), "failed finish must keep the run handle");
+        assert!(state.status.contains("finish failed"));
+        assert!(matches!(
+            handle_event(&mut state, &press(KeyCode::Char('s'))),
+            Action::Continue
+        ));
+        assert!(
+            state.status.contains("already mounted"),
+            "a stuck run must block starting another: {}",
+            state.status
+        );
+        assert!(matches!(
+            handle_event(&mut state, &press(KeyCode::Char('q'))),
+            Action::Quit
+        ));
+        assert!(
+            state.run.is_some(),
+            "quit must not discard a run it failed to unmount"
+        );
+
+        std::fs::set_permissions(&run_dir, PermissionsExt::from_mode(0o700)).unwrap();
+        assert!(matches!(
+            handle_event(&mut state, &press(KeyCode::Char('f'))),
+            Action::FinishRun
+        ));
+        assert!(state.run.is_none());
+        assert!(!run_dir.join("workdir").exists());
         assert!(run_dir.join("result.json").exists());
     }
 

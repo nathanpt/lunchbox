@@ -155,11 +155,11 @@ fn doctor_data(adapter_override: Option<&str>) -> Result<adapter::DoctorReport> 
 
 fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
     let report = doctor_data(adapter_override)?;
-    let fattest = report.fattest();
-    let duplicates = adapter::duplicates(&report.union);
     if json {
         println!("{}", report.to_json());
     } else {
+        let fattest = report.fattest();
+        let duplicates = adapter::duplicates(&report.union);
         match &report.adapter_version {
             Some(version) => println!("adapter        {} {version}", report.adapter),
             None => println!("adapter        {} (not detected)", report.adapter),
@@ -276,12 +276,14 @@ fn tui_preview(
             println!("{output}");
             Ok(ExitCode::SUCCESS)
         } else {
-            let listing = library::scan_roots(&cfg.search_roots(&libraries));
-            let state = tui::preview::PreviewState::new(
+            let listing = library::scan_roots(&cfg.search_roots(&libraries))?;
+            let mut state = tui::preview::PreviewState::new(
                 listing,
                 preview.without_menu_tokens,
                 preview.max_menu_tokens,
             );
+            let pinned: Vec<String> = preview.skills.iter().map(|s| s.name.clone()).collect();
+            state.preselect(&pinned);
             tui::preview::run(state)?;
             Ok(ExitCode::SUCCESS)
         }
@@ -298,7 +300,7 @@ fn tui_picker(libraries: Vec<String>, json: bool) -> Result<ExitCode> {
     {
         let cfg = Config::load()?;
         let libraries: Vec<PathBuf> = libraries.iter().map(PathBuf::from).collect();
-        let listing = library::scan_roots(&cfg.search_roots(&libraries));
+        let listing = library::scan_roots(&cfg.search_roots(&libraries))?;
         if json {
             let output = json!({
                 "library": listing.iter().map(|s| json!({
@@ -325,9 +327,9 @@ fn tui_policy(json: bool) -> Result<ExitCode> {
     }
     #[cfg(feature = "tui-menu")]
     {
-        let global = config::layer_report(&config::global_path())?;
-        let project = config::layer_report(&config::project_path())?;
         if json {
+            let global = config::layer_report(&config::global_path()?)?;
+            let project = config::layer_report(&config::project_path())?;
             let cfg = Config::load()?;
             let output = json!({
                 "global": {"path": global.path, "exists": global.exists, "allow": global.allow, "deny": global.deny},
@@ -335,12 +337,11 @@ fn tui_policy(json: bool) -> Result<ExitCode> {
                 "effective": {"allow": cfg.allow, "deny": cfg.deny},
             });
             println!("{output}");
-            Ok(ExitCode::SUCCESS)
         } else {
             let state = tui::policy::PolicyState::load()?;
             tui::policy::run(state)?;
-            Ok(ExitCode::SUCCESS)
         }
+        Ok(ExitCode::SUCCESS)
     }
 }
 

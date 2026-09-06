@@ -45,6 +45,11 @@ impl PreviewState {
             .map(|(skill, _)| skill.tokens)
             .sum()
     }
+    pub fn preselect(&mut self, names: &[String]) {
+        for (skill, selected) in self.library.iter_mut().zip(&mut self.selected) {
+            *selected = names.iter().any(|name| name == &skill.name);
+        }
+    }
 
     fn over_budget(&self) -> bool {
         self.selected_tokens() > self.max_menu_tokens
@@ -197,35 +202,33 @@ mod tests {
 
     #[test]
     fn selected_tokens_equal_cli_preview() {
-        let home = tempfile::TempDir::new().unwrap();
-        let global = home.path().join(".agents").join("skills");
-        for name in ["demo-review", "demo-scan"] {
-            let src = std::fs::read_to_string(
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("testdata/skills")
-                    .join(name)
-                    .join("SKILL.md"),
-            )
-            .unwrap();
-            std::fs::create_dir_all(global.join(name)).unwrap();
-            std::fs::write(global.join(name).join("SKILL.md"), src).unwrap();
-        }
+        let home = crate::tui::testkit::demo_tree_home();
         crate::config::with_home(home.path(), || {
             let cfg = crate::config::Config::load().unwrap();
-            let listing = library::scan_roots(&cfg.search_roots(&[]));
-            let mut state = PreviewState::new(listing, 27, 2000);
-            for flag in &mut state.selected {
-                *flag = true;
-            }
+            let listing = library::scan_roots(&cfg.search_roots(&[])).unwrap();
             let pins = vec![
                 "demo-review".to_string(),
                 "demo-scan".to_string(),
             ];
+            let mut state = PreviewState::new(listing, 27, 2000);
+            state.preselect(&pins);
             assert_eq!(
                 state.selected_tokens(),
                 tokens::preview(&cfg, &[], &pins).unwrap().menu_tokens
             );
         });
+    }
+
+    #[test]
+    fn preselect_marks_only_pinned_skills() {
+        let mut state = PreviewState::new(
+            vec![listed("demo-review", 14), listed("demo-scan", 13)],
+            27,
+            2000,
+        );
+        state.preselect(&["demo-review".to_string()]);
+        assert_eq!(state.selected, vec![true, false]);
+        assert_eq!(state.selected_tokens(), 14);
     }
 
     #[test]
