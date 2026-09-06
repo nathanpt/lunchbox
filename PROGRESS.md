@@ -15,7 +15,9 @@ default configuration, 90 + 30 with `--no-default-features`, zero warnings
 in both. **Features 001–013 all pass.** Branch `main`; tree clean after
 each phase commit.
 
-Next (DESIGN §22 "Next"): `skills/lunchbox/` driver Skill.
+Distribution (ADR-0005): MIT, git-only install from
+https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
+prebuilt Release binaries deferred.
 
 ## Scan-hook milestone verification (2026-09-06, this machine)
 

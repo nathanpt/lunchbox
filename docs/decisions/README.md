@@ -20,6 +20,7 @@ user-visible behavior.
 - `0002` — TUI dependencies: [0002-tui-dependencies.md](0002-tui-dependencies.md) (accepted 2026-09-06).
 - `0003` — Path B pack layout and `--from` manifest semantics: [0003-path-b-packs-and-from-semantics.md](0003-path-b-packs-and-from-semantics.md) (accepted 2026-09-06).
 - `0004` — Scan-hook invocation, lock vocabulary, and override semantics: [0004-scan-hook-contract.md](0004-scan-hook-contract.md) (accepted 2026-09-06).
+- `0005` — Distribution: git-install via GitHub, MIT, no crates.io in v1: [0005-distribution-git-install-mit.md](0005-distribution-git-install-mit.md) (accepted 2026-09-06).
 
 ## Template
 

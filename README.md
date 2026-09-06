@@ -12,12 +12,12 @@ From the repository (no account, no server, no background indexer — one
 static binary):
 
 ```sh
-cargo install --locked --git <repository-url>
+cargo install --locked --git https://github.com/nathanpt/lunchbox --tag v0.1.0
 ```
 
-`<repository-url>` is a placeholder — replace it with the real repository
-URL once published (none is configured yet). From a clone of this
-repository instead:
+Or the moving tip instead of the tag: `--git
+https://github.com/nathanpt/lunchbox`. From a clone of this repository
+instead:
 
 ```sh
 cargo install --locked --path .

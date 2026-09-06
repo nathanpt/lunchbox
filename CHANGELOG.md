@@ -6,6 +6,18 @@ edits that a user would not notice do not belong here.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-06
+
+### Added (packaging)
+
+- 2026-09-06 — v0.1.0 tagged and published at
+  https://github.com/nathanpt/lunchbox. MIT license (`LICENSE`);
+  `Cargo.toml` gains `license`, `repository`, `readme`, and
+  `rust-version = "1.85"`. Install is git-only (ADR-0005):
+  `cargo install --locked --git https://github.com/nathanpt/lunchbox
+  --tag v0.1.0`; crates.io is deferred (`lunchbox` name is taken by an
+  unrelated crate), prebuilt Release binaries deferred.
+
 ### Added
 
 - 2026-09-05 — Project foundation (Full tier): agent routing (`AGENTS.md`),

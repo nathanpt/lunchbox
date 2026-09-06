@@ -3,6 +3,10 @@ name = "lunchbox"
 version = "0.1.0"
 edition = "2024"
 description = "Run-scoped skill runtime: mount a sealed per-run Skill set, hand it to a worker, always unmount."
+license = "MIT"
+repository = "https://github.com/nathanpt/lunchbox"
+readme = "README.md"
+rust-version = "1.85"
 
 [features]
 default = ["tui-doctor", "tui-menu"]
