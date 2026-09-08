@@ -22,6 +22,20 @@ Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
 prebuilt Release binaries deferred.
 
+## v0.2.0 distribution verification (2026-09-08, this machine)
+
+`main` + tag `v0.2.0` at `788e030` pushed (packaging commit: version
+bump, README install snippet `--tag v0.2.0`, CHANGELOG release section,
+AGENTS phase line). Clean-root install of the blessed command —
+`cargo install --locked --git https://github.com/nathanpt/lunchbox
+--tag v0.2.0 --root /tmp/lbx-dist2` — succeeded; the installed binary
+reports `lunchbox 0.2.0` (tagged commit `788e030`), a fresh-HOME
+`add https://github.com/nathanpt/agent-skills` works (skills/ detected,
+6 skills), and `adapters` detects pi 0.84.4 / omp 18.1.14 with
+selftests ok. Note for users: cargo has no `--tag latest` — the tagless
+`cargo install --locked --git …` form installs the default-branch tip
+(documented in the README as the moving-tip option).
+
 ## Distribution verification (2026-09-06, this machine)
 
 Repo created and pushed with `gh` (account `nathanpt`, `repo` scope):
