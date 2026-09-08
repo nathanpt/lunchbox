@@ -17,9 +17,23 @@ warnings in both. **Features 001–018 all pass.** Branch `main`; tree
 clean after each phase commit.
 
 Distribution (ADR-0005): MIT, git-only install from
-https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
-prebuilt Release binaries deferred.
+https://github.com/nathanpt/lunchbox, tagged `v0.3.0` (latest;
+`v0.1.0`/`v0.2.0` earlier); crates.io and prebuilt Release binaries
+deferred.
 
+
+## v0.3.0 distribution verification (2026-09-08, this machine)
+
+`main` + tag `v0.3.0` at `202a930` pushed (packaging commit: version
+bump to 0.3.0, README install snippet `--tag v0.3.0`, CHANGELOG
+`[0.3.0]` release section, AGENTS phase line). Clean-root install of
+the blessed command — `cargo install --locked --git
+https://github.com/nathanpt/lunchbox --tag v0.3.0 --root /tmp/lbx-dist3`
+— succeeded; the installed binary reports `lunchbox 0.3.0` (tagged
+commit `202a930e`), and the release surfaces smoke-check fresh-HOME:
+`menu` piped fails closed (`menu requires a terminal; stdout is not a
+TTY`), `tui doctor` is `unrecognized subcommand`, pinless `start`
+errors `no skills pinned: …`.
 
 ## Menu milestone — feature-018 (2026-09-08, this machine)
 
