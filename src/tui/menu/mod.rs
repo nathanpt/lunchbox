@@ -36,6 +36,7 @@ pub enum Action {
     NewEditor,
     EditorSave,
     EditorSaveAndStart,
+    Finish,
 }
 
 pub enum Layer {
@@ -166,7 +167,7 @@ impl MenuState {
         }
         !matches!(
             self.stack.last(),
-            Some(Layer::Doctor(_)) | Some(Layer::Policy(_))
+            Some(Layer::Doctor(_)) | Some(Layer::Policy(_)) | Some(Layer::Editor(_))
         )
     }
 
@@ -216,8 +217,8 @@ impl MenuState {
                 Ok(false)
             }
             Action::Detail(manifest) => {
-                self.stack
-                    .push(Layer::ManifestDetail(ManifestDetailState { manifest }));
+                let detail = ManifestDetailState::new(manifest, &self.cfg, &self.libraries)?;
+                self.stack.push(Layer::ManifestDetail(detail));
                 Ok(false)
             }
             Action::Mount { source, task } => {
@@ -238,6 +239,10 @@ impl MenuState {
                     Ok(editor) => self.stack.push(Layer::Editor(editor)),
                     Err(error) => self.status = format!("cannot start editor: {error:#}"),
                 }
+                Ok(false)
+            }
+            Action::Finish => {
+                self.finish_live();
                 Ok(false)
             }
             Action::EditorSave => {
@@ -272,17 +277,20 @@ impl MenuState {
 
 fn draw_layer(layer: Option<&mut Layer>, frame: &mut Frame, area: Rect) {
     let title = match layer {
-        Some(Layer::Home(_)) => "lunchbox menu",
-        Some(Layer::Pantry(_)) => "Pantry",
-        Some(Layer::Manifests(_)) => "Manifests",
-        Some(Layer::ManifestDetail(_)) => "Manifest",
-        Some(Layer::Doctor(_)) => "Doctor",
-        Some(Layer::Policy(_)) => "Policy",
-        Some(Layer::Confirm(_)) => "Start run?",
-        Some(Layer::Editor(_)) => "Editor",
+        Some(Layer::Home(_)) => "lunchbox menu".to_string(),
+        Some(Layer::Pantry(_)) => "Pantry".to_string(),
+        Some(Layer::Manifests(_)) => "Manifests".to_string(),
+        Some(Layer::ManifestDetail(state)) => format!("manifest {}", state.manifest.name),
+        Some(Layer::Doctor(_)) => "Doctor".to_string(),
+        Some(Layer::Policy(_)) => "Policy".to_string(),
+        Some(Layer::Confirm(_)) => "Start run?".to_string(),
+        Some(Layer::Editor(editor)) => match editor.input_mode {
+            Some(field) => format!("Editor — {}", field.label()),
+            None => "Editor".to_string(),
+        },
         None => return,
     };
-    let block = chrome::screen(title);
+    let block = chrome::screen(&title);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     match layer {
@@ -320,14 +328,18 @@ fn status_line(state: &MenuState) -> Line<'static> {
 fn footer_text(state: &MenuState) -> &'static str {
     match state.stack.last() {
         Some(Layer::Home(_)) => "↑/↓ move · Enter open · Esc back · q quit",
-        Some(Layer::Pantry(_)) => "←/→ section · ↑/↓ move · Space toggle · s start · f finish · q quit",
-        Some(Layer::Manifests(_)) => "↑/↓ move · Enter details · n new · e edit · f finish · q quit",
+        Some(Layer::Pantry(_)) => {
+            "←/→ section · ↑/↓ move · Space toggle · s start · f finish · Esc back · q quit"
+        }
+        Some(Layer::Manifests(_)) => {
+            "↑/↓ move · Enter details · n new · e edit · Esc back · f finish · q quit"
+        }
         Some(Layer::ManifestDetail(_)) => "Esc back · f finish · q quit",
         Some(Layer::Doctor(_)) => "↑/↓ scroll · Esc back",
-        Some(Layer::Policy(_)) => "Tab layer · ←/→ list · a add · Esc back",
+        Some(Layer::Policy(_)) => "Tab layer · ←/→ list · a add · d delete · Esc back",
         Some(Layer::Confirm(_)) => "Enter mount · Esc cancel · f finish",
         Some(Layer::Editor(_)) => {
-            "Tab pane · ↑/↓ move · Space pack · r rename · d delete · w add · t task · b budget · c adapter · p pin · s save · S save+start"
+            "Tab pane · Space pack · t task · b budget · s save · Esc back · q quit"
         }
         None => "",
     }
@@ -489,6 +501,34 @@ mod tests {
             run::teardown(&run_dir, Outcome::Ok, &menu.cfg).unwrap();
             assert!(!run_dir.join("workdir").exists());
             assert!(run_dir.join("result.json").exists());
+        });
+    }
+
+    #[test]
+    fn f_reaches_editor_input_and_finishes_only_outside_it() {
+        let home = demo_tree_home();
+        let runs = tempfile::TempDir::new().unwrap();
+        crate::config::with_home(home.path(), || {
+            let mut menu = menu_for(home.path(), runs.path());
+            menu.dispatch(&press(KeyCode::Down)).unwrap();
+            menu.dispatch(&press(KeyCode::Enter)).unwrap();
+            menu.dispatch(&press(KeyCode::Char('n'))).unwrap();
+            assert!(matches!(menu.stack.last(), Some(Layer::Editor(_))));
+            menu.dispatch(&press(KeyCode::Char('f'))).unwrap();
+            match menu.stack.last() {
+                Some(Layer::Editor(editor)) => assert_eq!(
+                    editor.input, "f",
+                    "f must reach the editor input, not trigger finish"
+                ),
+                _ => panic!("editor must still be on top"),
+            }
+            assert_eq!(menu.status, "no live run", "finish must not have fired");
+            menu.dispatch(&press(KeyCode::Backspace)).unwrap();
+            menu.dispatch(&press(KeyCode::Char('e'))).unwrap();
+            menu.dispatch(&press(KeyCode::Enter)).unwrap();
+            menu.dispatch(&press(KeyCode::Char('f'))).unwrap();
+            assert_eq!(menu.status, "no live run");
+            assert!(matches!(menu.stack.last(), Some(Layer::Editor(_))), "f outside input must not pop the editor");
         });
     }
 }

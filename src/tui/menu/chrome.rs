@@ -25,6 +25,13 @@ pub fn dim(text: impl Into<String>) -> Span<'static> {
     Span::styled(text.into(), Style::default().fg(DIM))
 }
 
+pub fn accent(text: impl Into<String>) -> Span<'static> {
+    Span::styled(
+        text.into(),
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    )
+}
+
 pub fn good(text: impl Into<String>) -> Span<'static> {
     Span::styled(
         text.into(),

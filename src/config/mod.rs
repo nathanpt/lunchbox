@@ -136,6 +136,37 @@ pub fn layer_report(path: &Path) -> Result<LayerReport> {
 }
 
 #[cfg(feature = "tui-menu")]
+pub fn remove_layer_entry(path: &Path, list: List, entry: &str) -> Result<()> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e).context(format!("failed to read {}", path.display())),
+    };
+    let mut document: toml_edit::DocumentMut = text
+        .parse()
+        .with_context(|| format!("failed to parse config at {}", path.display()))?;
+    let key = list.as_str();
+    if let Some(item) = document.as_table_mut().get_mut(key) {
+        if let Some(entries) = item.as_array_mut() {
+            entries.retain(|value| value.as_str() != Some(entry));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+    let staged = path.with_extension(format!(
+        "{}.new",
+        path.extension().unwrap_or_default().to_string_lossy()
+    ));
+    fs::write(&staged, document.to_string())
+        .with_context(|| format!("failed to write {}", staged.display()))?;
+    fs::rename(&staged, path).with_context(|| format!("failed to replace {}", path.display()))
+}
+
+#[cfg(feature = "tui-menu")]
 pub fn append_layer_entry(path: &Path, list: List, entry: &str) -> Result<()> {
     let text = match fs::read_to_string(path) {
         Ok(text) => text,

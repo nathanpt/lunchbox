@@ -70,11 +70,15 @@ fn scan_section(root: PathBuf, label: String) -> RootSection {
     }
 }
 
-pub fn skill_union(sections: &[RootSection]) -> BTreeMap<String, u64> {
-    let mut union = BTreeMap::new();
+pub fn skill_union(sections: &[RootSection]) -> BTreeMap<String, ListedSkill> {
+    let mut union: BTreeMap<String, ListedSkill> = BTreeMap::new();
     for section in sections {
         for skill in &section.skills {
-            union.entry(skill.name.clone()).or_insert(skill.tokens);
+            union.entry(skill.name.clone()).or_insert_with(|| ListedSkill {
+                name: skill.name.clone(),
+                tokens: skill.tokens,
+                description: skill.description.clone(),
+            });
         }
     }
     union
@@ -191,6 +195,12 @@ pub fn render(state: &mut PantryState, frame: &mut Frame, area: Rect) {
                 }
                 if section.skills.is_empty() {
                     lines.push(Line::from(chrome::dim("no skills in this root".to_string())));
+                } else if let Some(skill) = section.skills.get(state.cursor) {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        chrome::bold(skill.name.clone()),
+                        chrome::dim(format!("  {}", skill.description)),
+                    ]));
                 }
             }
         },
@@ -306,6 +316,30 @@ mod tests {
     }
 
     #[test]
+    fn pantry_shows_focused_skill_description() {
+        let home = demo_tree_home();
+        let mut state = state_for(home.path());
+        let mut terminal = Terminal::new(TestBackend::new(80, 14)).unwrap();
+        let frame = terminal
+            .draw(|frame| render(&mut state, frame, frame.area()))
+            .unwrap();
+        let rendered = frame_to_string(frame.buffer, frame.area);
+        assert!(
+            rendered.contains("Review staged changes for defects and risks."),
+            "{rendered}"
+        );
+        handle_event(&mut state, &press(KeyCode::Down));
+        let frame = terminal
+            .draw(|frame| render(&mut state, frame, frame.area()))
+            .unwrap();
+        let rendered = frame_to_string(frame.buffer, frame.area);
+        assert!(
+            rendered.contains("Scan for leaked secrets in the worktree."),
+            "description must follow the cursor: {rendered}"
+        );
+    }
+
+    #[test]
     fn pantry_screen_two_selected() {
         let mut state = PantryState {
             sections: vec![
@@ -316,10 +350,12 @@ mod tests {
                         ListedSkill {
                             name: "demo-review".to_string(),
                             tokens: 14,
+                            description: "Review staged changes for defects and risks.".to_string(),
                         },
                         ListedSkill {
                             name: "demo-scan".to_string(),
                             tokens: 13,
+                            description: "Scan for leaked secrets in the worktree.".to_string(),
                         },
                     ],
                     error: None,

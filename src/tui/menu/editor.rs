@@ -30,6 +30,18 @@ pub enum Field {
     ManifestName,
 }
 
+impl Field {
+    pub fn label(self) -> &'static str {
+        match self {
+            Field::NewName => "new worker",
+            Field::Rename => "rename worker",
+            Field::Task => "task",
+            Field::Budget => "budget",
+            Field::ManifestName => "manifest name",
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SaveTarget {
     Project,
@@ -140,8 +152,7 @@ impl EditorState {
     ) -> Result<Self> {
         let sections = super::pantry::build_sections(cfg, libraries)?;
         let skills: Vec<ListedSkill> = super::pantry::skill_union(&sections)
-            .into_iter()
-            .map(|(name, tokens)| ListedSkill { name, tokens })
+            .into_values()
             .collect();
         let mut state = EditorState {
             path,
@@ -163,6 +174,31 @@ impl EditorState {
         };
         state.refresh_status();
         Ok(state)
+    }
+
+    pub fn skill_named(&self, name: &str) -> Option<&ListedSkill> {
+        self.skills.iter().find(|skill| skill.name == name)
+    }
+
+    pub fn live_tokens(&self) -> u64 {
+        let mut names: Vec<&str> = Vec::new();
+        for worker in &self.workers {
+            for pin in &worker.pack {
+                let base = pin_base(pin);
+                if !names.contains(&base) {
+                    names.push(base);
+                }
+            }
+        }
+        names
+            .iter()
+            .filter_map(|name| {
+                self.skills
+                    .iter()
+                    .find(|skill| skill.name == *name)
+                    .map(|skill| skill.tokens)
+            })
+            .sum()
     }
 
     pub fn build_input(&self) -> crate::run::ManifestInput {
@@ -361,6 +397,10 @@ impl EditorState {
     }
 }
 
+fn pin_base(pin: &str) -> &str {
+    pin.split_once('@').map_or(pin, |(base, _)| base)
+}
+
 pub fn save(state: &mut EditorState, cfg: &Config, libraries: &[PathBuf]) -> Result<PathBuf> {
     let path = match &state.path {
         Some(path) => path.clone(),
@@ -442,37 +482,68 @@ fn resolve_hashes(
 
 pub fn render(state: &mut EditorState, frame: &mut Frame, area: Rect) {
     let label = |text: &str| chrome::dim(format!("{text:<15} "));
+    let editing = |field: Field| state.input_mode == Some(field);
     let mut lines = Vec::new();
-    match &state.path {
-        Some(path) => lines.push(Line::from(vec![
+
+    if editing(Field::ManifestName) {
+        lines.push(Line::from(vec![
             label("manifest"),
-            chrome::dim(path.display().to_string()),
-        ])),
-        None => lines.push(Line::from(vec![
-            label("manifest"),
-            chrome::dim(format!(
-                "{} → {}/{}.toml",
-                state.save_target.label(),
-                state.name,
-                state.name
-            )),
-        ])),
-    };
-    lines.push(Line::from(vec![label("task"), Span::raw(state.task.clone())]));
+            chrome::accent(format!("{}▌", state.input)),
+        ]));
+    } else {
+        match &state.path {
+            Some(path) => lines.push(Line::from(vec![
+                label("manifest"),
+                chrome::dim(path.display().to_string()),
+            ])),
+            None => lines.push(Line::from(vec![
+                label("manifest"),
+                chrome::dim(format!(
+                    "{} → {}/{}.toml",
+                    state.save_target.label(),
+                    state.name,
+                    state.name
+                )),
+            ])),
+        };
+    }
+
+    if editing(Field::Task) {
+        lines.push(Line::from(vec![
+            label("task"),
+            chrome::accent(format!("{}▌", state.input)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![label("task"), Span::raw(state.task.clone())]));
+    }
+
     lines.push(Line::from(vec![
         label("adapter"),
         Span::raw(state.adapter.clone()),
     ]));
-    lines.push(Line::from(vec![
-        label("budget"),
-        Span::raw(match state.budget {
-            Some(budget) => budget.to_string(),
-            None => "(none)".to_string(),
-        }),
-    ]));
+
+    if editing(Field::Budget) {
+        lines.push(Line::from(vec![
+            label("budget"),
+            chrome::accent(format!("{}▌", state.input)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            label("budget"),
+            Span::raw(match state.budget {
+                Some(budget) => budget.to_string(),
+                None => "(none)".to_string(),
+            }),
+        ]));
+    }
+
     lines.push(Line::from(vec![
         label("pin hashes"),
         Span::raw(if state.pin_hashes { "on" } else { "off" }.to_string()),
+    ]));
+    lines.push(Line::from(vec![
+        chrome::dim("menu_tokens      ".to_string()),
+        chrome::bold(format!("this run: {}", state.live_tokens())),
     ]));
 
     lines.push(Line::from(""));
@@ -485,15 +556,38 @@ pub fn render(state: &mut EditorState, frame: &mut Frame, area: Rect) {
         let cursor_here = index == state.worker_cursor && workers_focused;
         let marker = if cursor_here { "▸ " } else { "  " };
         let body = format!("{:<16}", worker.name);
-        let pack = if worker.pack.is_empty() {
-            chrome::dim("pack: (empty)".to_string())
+        let pack_text = if worker.pack.is_empty() {
+            "(empty)".to_string()
         } else {
-            Span::raw(format!("pack: {}", worker.pack.join(", ")))
+            worker
+                .pack
+                .iter()
+                .map(|pin| match state.skill_named(pin_base(pin)) {
+                    Some(skill) => format!("{pin} ({})", skill.tokens),
+                    None => format!("{pin} (?)"),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let pack = if worker.pack.is_empty() {
+            chrome::dim(format!("pack: {pack_text}"))
+        } else {
+            Span::raw(format!("pack: {pack_text}"))
         };
         if cursor_here {
-            lines.push(Line::from(vec![Span::raw(marker), chrome::bold(body), Span::raw(" "), pack]));
+            lines.push(Line::from(vec![
+                Span::raw(marker),
+                chrome::bold(body),
+                Span::raw(" "),
+                pack,
+            ]));
         } else {
-            lines.push(Line::from(vec![Span::raw(marker), Span::raw(body), Span::raw(" "), pack]));
+            lines.push(Line::from(vec![
+                Span::raw(marker),
+                Span::raw(body),
+                Span::raw(" "),
+                pack,
+            ]));
         }
     }
     if state.workers.is_empty() {
@@ -527,7 +621,18 @@ pub fn render(state: &mut EditorState, frame: &mut Frame, area: Rect) {
     }
     if state.skills.is_empty() {
         lines.push(Line::from(chrome::dim("  (no skills discovered)".to_string())));
+    } else if let Some(skill) = state.skills.get(state.skill_cursor) {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            chrome::bold(skill.name.clone()),
+            chrome::dim(format!("  {}", skill.description)),
+        ]));
     }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(chrome::dim(
+        "w/r/d workers · c adapter · p pin hashes · f finish · S save+start".to_string(),
+    )));
     frame.render_widget(Paragraph::new(lines), area);
 }
 
@@ -588,6 +693,7 @@ pub fn handle_event(state: &mut EditorState, event: &Event) -> Action {
             state.pin_hashes = !state.pin_hashes;
             Action::Continue
         }
+        (KeyCode::Char('f'), KeyModifiers::NONE) => Action::Finish,
         (KeyCode::Char('S'), _) | (KeyCode::Char('s'), KeyModifiers::SHIFT) => {
             state.save_requested(true)
         }
@@ -692,6 +798,40 @@ mod tests {
                 handle_event(&mut state, &press(KeyCode::Char('s'))),
                 Action::EditorSave
             ));
+        });
+    }
+
+    #[test]
+    fn live_tokens_and_pack_costs_track_selections() {
+        let home = demo_tree_home();
+        let cfg = config_for(home.path());
+        let libraries = libraries_for(home.path());
+        crate::config::with_home(home.path(), || {
+            let mut state = named_draft(&cfg, &libraries, "e2e");
+            assert_eq!(state.live_tokens(), 0);
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert_eq!(state.live_tokens(), 14, "union updates on first toggle");
+            handle_event(&mut state, &press(KeyCode::Down));
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert_eq!(state.live_tokens(), 27);
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert_eq!(
+                state.live_tokens(), 14,
+                "toggling off removes the cost again"
+            );
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 20)).unwrap();
+            let frame = terminal
+                .draw(|frame| render(&mut state, frame, frame.area()))
+                .unwrap();
+            let rendered = crate::tui::snap::frame_to_string(frame.buffer, frame.area);
+            assert!(rendered.contains("this run: 27"), "{rendered}");
+            assert!(rendered.contains("demo-review (14)"), "{rendered}");
+            assert!(rendered.contains("demo-scan (13)"), "{rendered}");
+            assert!(
+                rendered.contains("Scan for leaked secrets in the worktree."),
+                "focused skill description must be visible: {rendered}"
+            );
         });
     }
 

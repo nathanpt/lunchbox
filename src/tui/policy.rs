@@ -86,6 +86,31 @@ impl PolicyState {
         self.cursor = self.cursor.min(len.saturating_sub(1));
     }
 
+    fn delete_entry(&mut self) {
+        let Some(entry) = self.active_entries().get(self.cursor).cloned() else {
+            self.status = "nothing to remove".to_string();
+            return;
+        };
+        let path = self.active_path().to_path_buf();
+        match config::remove_layer_entry(&path, self.list, &entry) {
+            Ok(()) => {
+                self.status = format!(
+                    "removed {entry} from {} {}",
+                    self.layer.as_str(),
+                    self.list.as_str()
+                );
+                if let Ok(report) = config::layer_report(&path) {
+                    match self.layer {
+                        WhichLayer::Global => self.global = report,
+                        WhichLayer::Project => self.project = report,
+                    }
+                    self.clamp_cursor();
+                }
+            }
+            Err(error) => self.status = format!("remove failed: {error:#}"),
+        }
+    }
+
     fn write_entry(&mut self) {
         let entry = self.input.trim().to_string();
         if entry.is_empty() {
@@ -232,6 +257,10 @@ pub fn handle_event(state: &mut PolicyState, event: &Event) -> Action {
             state.input.clear();
             Action::Continue
         }
+        (KeyCode::Char('d'), KeyModifiers::NONE) => {
+            state.delete_entry();
+            Action::Continue
+        }
         _ => Action::Continue,
     }
 }
@@ -272,6 +301,26 @@ mod tests {
         let global = config::layer_report(&global).unwrap();
         let project = config::layer_report(&project).unwrap();
         PolicyState::from_reports(global, project)
+    }
+
+    #[test]
+    fn delete_removes_focused_entry_and_preserves_comments() {
+        let root = tempfile::TempDir::new().unwrap();
+        let mut state = state_for(root.path());
+        handle_event(&mut state, &press_char('d'));
+        assert_eq!(state.status, "nothing to remove", "empty deny list must not delete");
+        handle_event(&mut state, &press(KeyCode::Left));
+        handle_event(&mut state, &press_char('d'));
+        assert!(
+            state.status.contains("removed demo-review from project allow"),
+            "{}",
+            state.status
+        );
+        assert!(state.project.allow.is_empty(), "report must reload after delete");
+        let text = std::fs::read_to_string(root.path().join("lunchbox.toml")).unwrap();
+        assert!(text.contains("# project layer"), "{text}");
+        assert!(text.contains("mount_mode = \"copy\""), "{text}");
+        assert!(!text.contains("demo-review"), "{text}");
     }
 
     #[test]

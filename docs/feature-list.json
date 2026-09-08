@@ -290,6 +290,23 @@
         "feature-017",
         "feature-018"
       ]
+    },
+    {
+      "id": "feature-020",
+      "category": "functional",
+      "description": "menu feedback pass: f usable inside editor inputs, visible editing state, Esc back advertised, live per-skill token costs with frontmatter descriptions, and policy entry deletion",
+      "steps": [
+        "the menu-level f (finish live run) no longer fires while a text input is focused: input-capable layers (editor included) consume their own keys, and the editor handles f itself outside input mode",
+        "editing state is visible in place: the screen title shows the field being edited (e.g. 'Editor — task'), the edited line renders accent-colored with a trailing block cursor and the live input text, and the status line keeps the prompt",
+        "every popping screen footer advertises Esc back (Pantry, Manifests, Editor)",
+        "pack composition shows money as you spend it: per-pin token counts in worker packs and manifest details, a live union menu_tokens total in the editor header that updates on every toggle, and the focused skill's frontmatter description previewed under the skill list in Pantry and Editor",
+        "the policy screen can delete the focused entry (d) from the focused layer and list, persisted with the same atomic toml_edit write as add, with a covered empty case"
+      ],
+      "passes": true,
+      "priority": 18,
+      "dependencies": [
+        "feature-019"
+      ]
     }
   ]
 }

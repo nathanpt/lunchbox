@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::manifests::{DiscoveredManifest, ManifestState};
 use crate::tui::menu::{chrome, Action};
 use anyhow::Result;
+use std::collections::BTreeMap;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -16,7 +17,9 @@ pub struct ManifestsState {
 impl ManifestsState {
     pub fn build(cfg: &Config, libraries: &[std::path::PathBuf]) -> Result<Self> {
         let sections = super::pantry::build_sections(cfg, libraries)?;
-        let skills = super::pantry::skill_union(&sections);
+        let union = super::pantry::skill_union(&sections);
+        let skills: BTreeMap<String, u64> =
+            union.values().map(|skill| (skill.name.clone(), skill.tokens)).collect();
         Ok(ManifestsState {
             manifests: crate::manifests::discover(&skills),
             cursor: 0,
@@ -26,6 +29,18 @@ impl ManifestsState {
 
 pub struct ManifestDetailState {
     pub manifest: DiscoveredManifest,
+    pub tokens: std::collections::BTreeMap<String, u64>,
+}
+
+impl ManifestDetailState {
+    pub fn new(manifest: DiscoveredManifest, cfg: &Config, libraries: &[std::path::PathBuf]) -> Result<Self> {
+        let sections = super::pantry::build_sections(cfg, libraries)?;
+        let tokens = super::pantry::skill_union(&sections)
+            .values()
+            .map(|skill| (skill.name.clone(), skill.tokens))
+            .collect();
+        Ok(ManifestDetailState { manifest, tokens })
+    }
 }
 
 pub fn render(state: &mut ManifestsState, frame: &mut Frame, area: Rect) {
@@ -133,7 +148,15 @@ pub fn render_detail(state: &mut ManifestDetailState, frame: &mut Frame, area: R
             for (name, pack) in workers {
                 lines.push(Line::from(chrome::bold(format!("worker {name}"))));
                 for pin in pack {
-                    lines.push(Line::from(chrome::dim(format!("  - {pin}"))));
+                    let base = pin.split_once('@').map_or(pin.as_str(), |(base, _)| base);
+                    let tokens = state.tokens.get(base).cloned().unwrap_or(0);
+                    let unknown = state.tokens.get(base).is_none();
+                    let line = if unknown {
+                        format!("  - {pin}  ?")
+                    } else {
+                        format!("  - {pin}  {tokens}")
+                    };
+                    lines.push(Line::from(chrome::dim(line)));
                 }
             }
         }
@@ -156,5 +179,33 @@ pub fn handle_detail_event(_state: &mut ManifestDetailState, event: &Event) -> A
         (KeyCode::Char('q'), _) => Action::Quit,
         (KeyCode::Esc, _) => Action::Pop,
         _ => Action::Continue,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detail_lists_per_pin_tokens() {
+        let manifest = DiscoveredManifest {
+            name: "rt".to_string(),
+            path: std::path::PathBuf::from("lunchbox/manifests/rt.toml"),
+            state: ManifestState::Ok {
+                task: "t".to_string(),
+                workers: vec![("w".to_string(), vec!["demo-review".to_string()])],
+                tokens: 20,
+            },
+        };
+        let mut state = ManifestDetailState {
+            manifest,
+            tokens: [("demo-review".to_string(), 20u64)].into_iter().collect(),
+        };
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(64, 10)).unwrap();
+        let frame = terminal
+            .draw(|frame| render_detail(&mut state, frame, frame.area()))
+            .unwrap();
+        let rendered = crate::tui::snap::frame_to_string(frame.buffer, frame.area);
+        assert!(rendered.contains("demo-review  20"), "{rendered}");
     }
 }

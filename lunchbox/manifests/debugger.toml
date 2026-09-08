@@ -1,0 +1,8 @@
+schema = 1
+task = ""
+adapter = "pi"
+budget = { max_menu_tokens = 3000 }
+
+[[workers]]
+name = "main"
+pack = ["debug", "handoff"]

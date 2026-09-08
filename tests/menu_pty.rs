@@ -187,8 +187,8 @@ fn menu_e2e_editor_roundtrip() {
     send(&mut app, "e2e\r");
     expect(&app, "empty pack");
     send(&mut app, "t");
-    send(&mut app, "demo task\r");
-    expect(&app, "demo task");
+    send(&mut app, "find flaws\r");
+    expect(&app, "find flaws");
     send(&mut app, " ");
     send(&mut app, "\x1b[B");
     send(&mut app, " ");

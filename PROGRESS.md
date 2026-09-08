@@ -21,6 +21,33 @@ https://github.com/nathanpt/lunchbox, tagged `v0.3.0` (latest;
 `v0.1.0`/`v0.2.0` earlier); crates.io and prebuilt Release binaries
 deferred.
 
+## Menu milestone — feature-020 (2026-09-08, this machine)
+
+Feedback pass over the menu: (1) `f` inside editor inputs now types —
+the menu-level finish interceptor excludes every input-capable layer
+and the editor handles `f` itself outside input mode (new
+`menu::Action::Finish`); (2) editing state is visible in place — the
+screen title becomes `Editor — task`/`— budget`/… while editing, the
+edited line renders accent-colored with the live input and a `▌`
+cursor, status line keeps the prompt; (3) Esc back is advertised on
+every popping footer (Pantry, Manifests, Editor); (4) pack costs are
+live — per-pin tokens in worker packs (`demo-review (14)`) and manifest
+details, a `menu_tokens this run: N` header line in the editor that
+updates on every toggle, and the focused skill's frontmatter
+description previewed under the skill list in Pantry and Editor
+(`ListedSkill` now carries `description`; `skill_union` returns
+`ListedSkill`); (5) the policy screen deletes the focused entry with
+`d` via a new atomic `config::remove_layer_entry` (comments preserved,
+empty-list case covered).
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 137 unit + 33 cli + 4 menu_pty, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 107 + 33, 0 failed, 0 warnings |
+| `f` regression | `cargo test --bin lunchbox f_reaches` + pty editor task `find flaws` | ok — `f` lands in the input; `f` outside input finishes; pty saves the task verbatim |
+| Real-pty eyeball | `script -qec 'stty rows 24 cols 80; HOME=<tmp> lunchbox menu'` | editor shows `menu_tokens this run: 27`, `pack: demo-review (14), demo-scan (13)`, description preview; title reads `Editor — manifest name` while typing |
+| Policy delete | `cargo test --bin lunchbox delete_removes` | ok — entry removed, comments and other keys preserved, empty list says `nothing to remove` |
+
 
 ## Menu milestone — feature-019 (2026-09-08, this machine)
 
