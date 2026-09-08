@@ -1,5 +1,4 @@
 use crate::config::{self, LayerReport, List};
-use crate::tui::terminal::{self, Restore};
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -234,47 +233,6 @@ pub fn handle_event(state: &mut PolicyState, event: &Event) -> Action {
             Action::Continue
         }
         _ => Action::Continue,
-    }
-}
-
-pub fn run(mut state: PolicyState) -> Result<()> {
-    let mut terminal = terminal::install()?;
-    let _restore = Restore;
-    loop {
-        terminal.draw(|frame| {
-            let area = frame.area();
-            let body = Rect {
-                height: area.height.saturating_sub(2),
-                ..area
-            };
-            render(&mut state, frame, body);
-            let prompt = if state.input_mode {
-                format!("add entry: {}", state.input)
-            } else {
-                state.status.clone()
-            };
-            let prompt_area = Rect {
-                y: body.bottom(),
-                height: 1,
-                ..area
-            };
-            frame.render_widget(Paragraph::new(prompt), prompt_area);
-            let footer = Rect {
-                y: prompt_area.bottom(),
-                height: 1,
-                ..area
-            };
-            frame.render_widget(
-                Paragraph::new(Line::from(
-                    "Tab layer · ←/→ list · a add (adding only, no delete in v1) · q quit",
-                )),
-                footer,
-            );
-        })?;
-        let event = terminal::next_event()?;
-        if let Action::Quit = handle_event(&mut state, &event) {
-            return Ok(());
-        }
     }
 }
 

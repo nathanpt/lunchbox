@@ -4,6 +4,8 @@ mod hash;
 mod library;
 mod mount;
 mod pantry;
+#[cfg(all(feature = "tui-doctor", feature = "tui-menu"))]
+mod manifests;
 mod resolve;
 mod run;
 mod tokens;
@@ -71,41 +73,12 @@ enum CliCommand {
     Update {
         name: Option<String>,
     },
-    Tui {
-        #[command(subcommand)]
-        screen: TuiScreen,
+    Menu {
+        #[arg(long = "library", value_name = "PATH")]
+        libraries: Vec<String>,
     },
 }
 
-#[derive(Subcommand)]
-enum TuiScreen {
-    Doctor {
-        #[arg(long)]
-        adapter: Option<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    Preview {
-        #[arg(long = "skill", value_name = "PIN")]
-        skills: Vec<String>,
-        #[arg(long = "library", value_name = "PATH")]
-        libraries: Vec<String>,
-        #[arg(long)]
-        adapter: Option<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    Picker {
-        #[arg(long = "library", value_name = "PATH")]
-        libraries: Vec<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    Policy {
-        #[arg(long)]
-        json: bool,
-    },
-}
 #[derive(Args)]
 struct StartArgs {
     #[arg(long)]
@@ -147,7 +120,7 @@ fn main() -> ExitCode {
         CliCommand::Adapters { explain } => cmd_adapters(explain),
         CliCommand::Add { url, path } => cmd_add(&url, path.as_deref()),
         CliCommand::Update { name } => cmd_update(name.as_deref()),
-        CliCommand::Tui { screen } => cmd_tui(screen),
+        CliCommand::Menu { libraries } => cmd_menu(libraries),
     };
     match result {
         Ok(code) => code,
@@ -250,134 +223,25 @@ fn tui_feature_missing(feature: &str, plain_equivalent: &str) -> String {
             .to_string()
     }
 }
-fn cmd_tui(screen: TuiScreen) -> Result<ExitCode> {
-    match screen {
-        TuiScreen::Doctor { adapter, json } => tui_doctor(adapter.as_deref(), json),
-        TuiScreen::Preview {
-            skills,
-            libraries,
-            adapter,
-            json,
-        } => tui_preview(skills, libraries, adapter, json),
-        TuiScreen::Picker { libraries, json } => tui_picker(libraries, json),
-        TuiScreen::Policy { json } => tui_policy(json),
-    }
-}
-
-fn tui_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
-    #[cfg(not(feature = "tui-doctor"))]
+fn cmd_menu(libraries: Vec<String>) -> Result<ExitCode> {
+    #[cfg(not(all(feature = "tui-doctor", feature = "tui-menu")))]
     {
-        let _ = (adapter_override, json);
-        bail!(tui_feature_missing("tui-doctor", "lunchbox doctor"));
+        let _ = libraries;
+        bail!(tui_feature_missing(
+            "tui-doctor,tui-menu",
+            "lunchbox doctor / lunchbox start"
+        ));
     }
-    #[cfg(feature = "tui-doctor")]
+    #[cfg(all(feature = "tui-doctor", feature = "tui-menu"))]
     {
-        let report = doctor_data(adapter_override)?;
-        if json {
-            println!("{}", report.to_json());
-            Ok(ExitCode::SUCCESS)
-        } else {
-            crate::tui::doctor::run(report)?;
-            Ok(ExitCode::SUCCESS)
+        use std::io::IsTerminal;
+        if !std::io::stdout().is_terminal() {
+            bail!("menu requires a terminal; stdout is not a TTY");
         }
-    }
-}
-
-fn tui_preview(
-    skills: Vec<String>,
-    libraries: Vec<String>,
-    adapter: Option<String>,
-    json: bool,
-) -> Result<ExitCode> {
-    #[cfg(not(feature = "tui-doctor"))]
-    {
-        let _ = (skills, libraries, adapter, json);
-        bail!(tui_feature_missing("tui-doctor", "lunchbox doctor"));
-    }
-    #[cfg(feature = "tui-doctor")]
-    {
-        let mut cfg = Config::load()?;
-        if let Some(adapter) = adapter {
-            cfg.default_adapter = adapter;
-        }
-        let libraries: Vec<PathBuf> = libraries.iter().map(PathBuf::from).collect();
-        let preview = tokens::preview(&cfg, &libraries, &skills)?;
-        if json {
-            let output = json!({
-                "skills": preview.skills.iter().map(|s| json!({"name": s.name, "tokens": s.tokens})).collect::<Vec<_>>(),
-                "menu_tokens": preview.menu_tokens,
-                "without_menu_tokens": preview.without_menu_tokens,
-                "max_menu_tokens": preview.max_menu_tokens,
-                "over_budget": preview.over_budget,
-            });
-            println!("{output}");
-            Ok(ExitCode::SUCCESS)
-        } else {
-            let listing = library::scan_roots(&cfg.search_roots(&libraries)?)?;
-            let mut state = tui::preview::PreviewState::new(
-                listing,
-                preview.without_menu_tokens,
-                preview.max_menu_tokens,
-            );
-            let pinned: Vec<String> = preview.skills.iter().map(|s| s.name.clone()).collect();
-            state.preselect(&pinned);
-            tui::preview::run(state)?;
-            Ok(ExitCode::SUCCESS)
-        }
-    }
-}
-
-fn tui_picker(libraries: Vec<String>, json: bool) -> Result<ExitCode> {
-    #[cfg(not(feature = "tui-menu"))]
-    {
-        let _ = (libraries, json);
-        bail!(tui_feature_missing("tui-menu", "lunchbox start"));
-    }
-    #[cfg(feature = "tui-menu")]
-    {
         let cfg = Config::load()?;
         let libraries: Vec<PathBuf> = libraries.iter().map(PathBuf::from).collect();
-        let listing = library::scan_roots(&cfg.search_roots(&libraries)?)?;
-        if json {
-            let output = json!({
-                "library": listing.iter().map(|s| json!({
-                    "name": s.name,
-                    "tokens": s.tokens,
-                    "source": s.source,
-                })).collect::<Vec<_>>(),
-            });
-            println!("{output}");
-            Ok(ExitCode::SUCCESS)
-        } else {
-            let state = tui::picker::PickerState::new(cfg, libraries, listing);
-            tui::picker::run(state)?;
-            Ok(ExitCode::SUCCESS)
-        }
-    }
-}
-
-fn tui_policy(json: bool) -> Result<ExitCode> {
-    #[cfg(not(feature = "tui-menu"))]
-    {
-        let _ = json;
-        bail!(tui_feature_missing("tui-menu", "lunchbox policy"));
-    }
-    #[cfg(feature = "tui-menu")]
-    {
-        if json {
-            let global = config::layer_report(&config::global_path()?)?;
-            let project = config::layer_report(&config::project_path())?;
-            let cfg = Config::load()?;
-            let output = json!({
-                "global": {"path": global.path, "exists": global.exists, "allow": global.allow, "deny": global.deny},
-                "project": {"path": project.path, "exists": project.exists, "allow": project.allow, "deny": project.deny},
-                "effective": {"allow": cfg.allow, "deny": cfg.deny},
-            });
-            println!("{output}");
-        } else {
-            let state = tui::policy::PolicyState::load()?;
-            tui::policy::run(state)?;
-        }
+        tui::menu::pantry::build_sections(&cfg, &libraries)?;
+        tui::menu::run(tui::menu::MenuState::new(cfg, libraries))?;
         Ok(ExitCode::SUCCESS)
     }
 }
@@ -806,44 +670,14 @@ fn cmd_adapters(explain: bool) -> Result<ExitCode> {
 }
 
 #[cfg(test)]
-mod tui_tests {
+mod menu_tests {
     #[allow(unused_imports)]
     use super::*;
 
-    #[cfg(not(feature = "tui-doctor"))]
+    #[cfg(not(all(feature = "tui-doctor", feature = "tui-menu")))]
     #[test]
-    fn doctor_and_preview_fail_closed_without_tui_doctor() {
-        let error = cmd_tui(TuiScreen::Doctor {
-            adapter: None,
-            json: true,
-        })
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("this build has no TUI screens"), "{error}");
-        let error = cmd_tui(TuiScreen::Preview {
-            skills: vec![],
-            libraries: vec![],
-            adapter: None,
-            json: true,
-        })
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("this build has no TUI screens"), "{error}");
-    }
-
-    #[cfg(not(feature = "tui-menu"))]
-    #[test]
-    fn picker_and_policy_fail_closed_without_tui_menu() {
-        let error = cmd_tui(TuiScreen::Picker {
-            libraries: vec![],
-            json: true,
-        })
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("this build has no TUI screens"), "{error}");
-        let error = cmd_tui(TuiScreen::Policy { json: true })
-            .unwrap_err()
-            .to_string();
+    fn menu_fails_closed_without_tui_features() {
+        let error = cmd_menu(vec![]).unwrap_err().to_string();
         assert!(error.contains("this build has no TUI screens"), "{error}");
     }
 }

@@ -24,6 +24,42 @@ https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
 prebuilt Release binaries deferred.
 
 
+## Menu milestone — feature-017 (2026-09-08, this machine)
+
+`lunchbox menu` replaces the `tui <screen>` surface (ADR-0007): a
+mode-stack app (Home → Pantry / Manifests / Doctor / Policy +
+ManifestDetail + ConfirmStart) in `src/tui/menu/`, manifest discovery in
+`src/manifests.rs`, picker/preview deleted, doctor/policy `run()` loops
+dropped (menu drives `render`/`handle_event`). Dev-only deps added:
+`portable-pty` + `vt100` for pty E2E against the real binary.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 123 unit + 33 cli + 3 menu_pty, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 99 + 33 + 0, 0 failed, 0 warnings |
+| Pty E2E | `cargo test --test menu_pty` | ok — start flow (Pantry → select → s → confirm `sha256:` + `menu_tokens    this run: 27` → mount → `f` unmount → disk: 1 run dir, workdir gone, `unmounted: true`), TTY guard, doctor route |
+| tui removed | `HOME=<tmp> lunchbox tui doctor; echo $?` | `error: unrecognized subcommand 'tui'`; exit=2 |
+| TTY guard | `HOME=<tmp> lunchbox menu; echo $?` (piped) | `error: menu requires a terminal; stdout is not a TTY`; exit=1 |
+| CLI-only build | `cargo build --no-default-features && … menu` | `error: this build has no TUI screens…`; help lists `menu`, not `tui` |
+| Real-pty smoke | `script -qec 'stty rows 24 cols 80; HOME=<tmp> lunchbox menu'` | Home→Pantry→Space,↓,Space→`s`→Enter→`f`→`q`: `sha256:`, `mounted`, `unmounted — result.json written`, 1 run dir, `result.json unmounted=true`, workdir gone, exit 0 |
+
+Deviations from the plan, all minor: (1) the menu module compiles under
+`all(tui-doctor, tui-menu)` — gating on `tui-menu` alone cannot compile
+because menu wraps `tui::doctor` (the plan wanted cfg-free modules;
+main.rs gates `cmd_menu` on the same `all(...)`); (2) `RootKind`/`kind`
+dropped from `RootSection` (labels already distinguish sections; unused
+fields violate zero-warning); (3) `ListedSkill.source` and
+`tokens::preview` deleted — their only reader was the removed
+`tui picker/preview --json` path (clean cutover); (4) cli.rs probe
+helpers (`probe_screen`/`twin_stdout`) deleted with their last callers;
+feature-006 rewritten to assert deny behavior directly (the JSON-twin
+reads were observation only); (5) `Source::Manifest` carries
+`#[allow(dead_code)]` until the feature-018 editor constructs it (same
+pattern as `ManifestInput`'s reserved fields); (6) pty expectations
+match a `vt100`-emulated screen, not raw bytes — ratatui diff rendering
+skips unchanged cells, so raw substring matching is impossible
+(`Parser::new` takes `(rows, cols)`).
+
 ## Menu milestone — feature-016 (2026-09-08, this machine)
 
 `start` fails closed with no pins (feature-016): zero `--skill` and no

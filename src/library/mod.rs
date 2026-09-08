@@ -99,7 +99,6 @@ pub fn scan_root(root: &Path) -> Result<Vec<FoundSkill>> {
 #[cfg(any(feature = "tui-doctor", feature = "tui-menu"))]
 pub struct ListedSkill {
     pub name: String,
-    pub source: PathBuf,
     pub tokens: u64,
 }
 
@@ -113,7 +112,6 @@ pub fn scan_roots(roots: &[PathBuf]) -> Result<Vec<ListedSkill>> {
                 listed.push(ListedSkill {
                     tokens: crate::tokens::estimate(&skill.name, &skill.description),
                     name: skill.name,
-                    source: skill.source,
                 });
             }
         }

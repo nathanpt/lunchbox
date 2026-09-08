@@ -1,6 +1,4 @@
 use crate::adapter::DoctorReport;
-use crate::tui::terminal::{self, Restore};
-use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -122,19 +120,6 @@ pub fn handle_event(state: &mut DoctorState, event: &Event) -> Action {
             Action::Continue
         }
         _ => Action::Continue,
-    }
-}
-
-pub fn run(report: DoctorReport) -> Result<()> {
-    let mut terminal = terminal::install()?;
-    let _restore = Restore;
-    let mut state = DoctorState::new(report);
-    loop {
-        terminal.draw(|frame| render(&mut state, frame, frame.area()))?;
-        let event = terminal::next_event()?;
-        if let Action::Quit = handle_event(&mut state, &event) {
-            return Ok(());
-        }
     }
 }
 

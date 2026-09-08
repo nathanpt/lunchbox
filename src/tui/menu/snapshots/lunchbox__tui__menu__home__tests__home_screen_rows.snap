@@ -1,0 +1,10 @@
+---
+source: src/tui/menu/home.rs
+expression: "frame_to_string(frame.buffer, frame.area)"
+---
+lunchbox menu
+
+  Pantry
+▸ Manifests
+  Doctor
+  Policy

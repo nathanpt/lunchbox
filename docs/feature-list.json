@@ -251,7 +251,7 @@
         "the tui doctor|preview|picker|policy subcommands are removed (clean cutover): doctor and policy become menu screens with unchanged behavior, picker's start flow is absorbed into Pantry, preview's role is covered by the confirmation screen and start --dry-run, and doctor --json / start --json keep serving scripted callers",
         "in-process snapshot tests (TestBackend) cover the new screens and the confirmation gate; cargo test green in both feature configurations; CHANGELOG records the breaking change for 0.3.0"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 15,
       "dependencies": [
         "feature-002",

@@ -498,7 +498,18 @@ lunchbox add <git-url> [--path <subdir>]      # ADR-0006
 lunchbox update [name]                       # ADR-0006
 lunchbox adapters [--explain]
 lunchbox why [run_id]
+lunchbox menu [--library PATH]             # ADR-0007 interactive surface
 ```
+
+`menu` is the single interactive app (ADR-0007): Home routes to Pantry
+(skill roots, pack composition, start-behind-confirmation), Manifests
+(discovered `./lunchbox/manifests` then `~/.lunchbox/manifests`, project
+wins on name collision), Doctor, and Policy. It requires a TTY; every
+other subcommand stays non-interactive and scriptable. The former
+`tui doctor|preview|picker|policy` subcommands are removed — doctor and
+policy live as menu routes, picker's start flow is Pantry's, and
+preview's role is covered by the confirmation screen and
+`start --dry-run`.
 
 ### `add` / `update` (ADR-0006)
 
@@ -692,7 +703,10 @@ Guarantees:
 - TUI framework: **Ratatui** (Rust, immediate-mode). The TUI is a first-class v1 product surface, not a wrapper: doctor, token-cost preview, skill picker, and policy allow/deny review all ship in v1 (§22 TUI milestone). Core stays framework-free (`clap` + library); TUI behind a cargo feature (`tui-menu`, `tui-doctor`) so `--no-default-features` still ships a working CLI. Rejected OpenTUI (Bun-locked, ~71MB bundle, per-process startup cost — right for agent CLIs, wrong for a flock-and-symlink systems tool). Evidence: vault note `40_Knowledge/46_UI Design/Pretty TUI Settings Pages Design Language.md` (§ Framework Landscape, Top 3 Pros vs Cons).
   - Pins: `ratatui 0.30` + `crossterm 0.29`; start from the component template (`cargo generate ratatui/templates`); `color-eyre` (auto terminal restore) + `config` crate (not stagnating `figment`); `insta` for buffer snapshots; truecolor-assumed with `COLORTERM` fallback; vet any widget crate's crossterm pin before adopting (third-party crates may still pin 0.28 — use the `crossterm_0_28` feature flag then).
 - No required runtime (no Node to run `lunchbox` itself).
-- Install (v1): `cargo install --locked --git <repo>`. No crates.io publish: the `lunchbox` crate name is taken (dormant async-VFS crate, checked 2026-09-06), and publishing waits for a first external user. Binary name stays `lunchbox`.
+- Scripted callers use `doctor --json` / `start --json` / `start --dry-run`;
+  the menu surface carries no `--json` twins (ADR-0007 superseded the
+  per-screen JSON modes when the four `tui <screen>` subcommands were
+  removed).
 - Tests:
   - hasher golden fixtures
   - mounter symlink + copy + teardown
@@ -755,6 +769,18 @@ Four screens, feature-gated, each with a `--json` twin and snapshot tests:
 2. token-cost preview — `menu_tokens` for a candidate pack vs without-Lunchbox
 3. skill picker — browse the library, compose a pack, start a real run, finish it
 4. policy review — view and edit `allow` / `deny` in the layer being viewed (global or project)
+
+### Menu TUI app (ADR-0007; supersedes the four screens above)
+
+The four single-purpose screens became routes of one app, `lunchbox menu`
+(breaking, released as 0.3.0): Home → Pantry / Manifests / Doctor /
+Policy. Pantry absorbs the picker (sections for managed pantries,
+`library_paths`, and default roots; Space composes a pack; `s` opens the
+confirmation gate showing adapter, exact pins with hashes, and token
+cost; Enter mounts through the same `prepare_run` path as CLI `start`,
+adapter `none`). Manifests lists discovered manifests with per-worker
+pack detail. Preview's estimate role moved to the confirmation screen
+and `start --dry-run`.
 
 ### Finish v1
 

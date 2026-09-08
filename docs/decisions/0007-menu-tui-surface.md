@@ -82,3 +82,9 @@ Option 3 (user-selected 2026-09-08). Concretely:
   pantry, and manifest model the CLI uses.
 - `menu`'s start action funnels through the same run-preparation code
   as `cmd_start`, so CI and interactive runs cannot diverge.
+
+- Addendum (2026-09-08, feature-017 implementation): the menu module is
+  compiled only when both `tui-doctor` and `tui-menu` are on (it wraps
+  both screens); partial-feature builds get the same rebuild hint as
+  CLI-only builds. Dev-only `portable-pty` + `vt100` drive pty E2E
+  tests of the real binary; runtime dependencies are unchanged.

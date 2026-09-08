@@ -31,166 +31,34 @@ fn only_run(home: &Path) -> PathBuf {
     dirs.pop().unwrap()
 }
 
-fn fake_tree_home() -> TempDir {
-    let home = scratch();
-    let global = home.path().join(".agents").join("skills");
-    fs::create_dir_all(&global).unwrap();
-    for name in ["demo-review", "demo-scan"] {
-        let src = fs::read_to_string(demo_skills().join(name).join("SKILL.md")).unwrap();
-        fs::create_dir_all(global.join(name)).unwrap();
-        fs::write(global.join(name).join("SKILL.md"), src).unwrap();
-    }
-    home
-}
-fn twin_stdout(args: &[&str], home: &Path, cwd: &Path) -> Vec<u8> {
-    lbx()
-        .args(args)
-        .env("HOME", home)
-        .current_dir(cwd)
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone()
-}
 
-fn probe_screen(args: &[&str]) -> bool {
+#[test]
+fn feature_017_tui_subcommand_removed() {
     let home = scratch();
     let cwd = scratch();
-    let output = lbx()
-        .args(args)
-        .env("HOME", home.path())
-        .current_dir(cwd.path())
-        .output()
-        .unwrap_or_else(|error| panic!("failed to run lunchbox {:?} probe: {error}", args));
-    !String::from_utf8_lossy(&output.stderr).contains("no TUI screens")
-}
-
-fn doctor_screens_available() -> bool {
-    static AVAILABLE: std::sync::LazyLock<bool> =
-        std::sync::LazyLock::new(|| probe_screen(&["tui", "doctor", "--json"]));
-    *AVAILABLE
-}
-
-fn menu_screens_available() -> bool {
-    static AVAILABLE: std::sync::LazyLock<bool> =
-        std::sync::LazyLock::new(|| probe_screen(&["tui", "policy", "--json"]));
-    *AVAILABLE
-}
-
-
-#[test]
-fn tui_doctor_json_twin_matches_doctor_json() {
-    let home = fake_tree_home();
-    if !doctor_screens_available() { return; }
-    let cwd = scratch();
-    let a = twin_stdout(&["tui", "doctor", "--json"], home.path(), cwd.path());
-    let b = twin_stdout(&["doctor", "--json"], home.path(), cwd.path());
-    assert_eq!(
-        String::from_utf8(a).unwrap(),
-        String::from_utf8(b).unwrap(),
-        "tui doctor --json must be byte-identical to doctor --json"
-    );
-}
-
-#[test]
-fn tui_preview_json_twin_reports_estimates() {
-    let home = fake_tree_home();
-    if !doctor_screens_available() { return; }
-    let cwd = scratch();
-    let output = twin_stdout(
-        &[
-            "tui",
-            "preview",
-            "--json",
-            "--skill",
-            "demo-review",
-            "--skill",
-            "demo-scan",
-        ],
-        home.path(),
-        cwd.path(),
-    );
-    let report: Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["menu_tokens"], serde_json::json!(27));
-    assert_eq!(report["without_menu_tokens"], serde_json::json!(27));
-    assert_eq!(report["max_menu_tokens"], serde_json::json!(2000));
-    assert_eq!(report["over_budget"], serde_json::json!(false));
-    assert_eq!(report["skills"].as_array().unwrap().len(), 2);
-
-    let output = twin_stdout(
-        &["tui", "preview", "--json", "--skill", "demo-review"],
-        home.path(),
-        cwd.path(),
-    );
-    let report: Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["menu_tokens"], serde_json::json!(14));
-}
-
-#[test]
-fn tui_preview_json_rejects_tag_pins_like_start() {
-    let home = fake_tree_home();
-    if !doctor_screens_available() { return; }
-    let cwd = scratch();
     lbx()
-        .args(["tui", "preview", "--json", "--skill", "demo-review@latest"])
+        .args(["tui", "doctor"])
         .env("HOME", home.path())
         .current_dir(cwd.path())
         .assert()
         .failure()
-        .stderr(predicates::str::contains("tag pins are not supported yet"));
-}
-
-#[test]
-fn tui_picker_json_twin_lists_library() {
-    let home = scratch();
-    if !menu_screens_available() { return; }
-    let cwd = scratch();
-    let skills = demo_skills();
-    let output = twin_stdout(
-        &["tui", "picker", "--json", "--library", skills.to_str().unwrap()],
-        home.path(),
-        cwd.path(),
-    );
-    let report: Value = serde_json::from_slice(&output).unwrap();
-    let library = report["library"].as_array().unwrap();
-    assert_eq!(library.len(), 2);
-    assert_eq!(library[0]["name"], serde_json::json!("demo-review"));
-    assert_eq!(library[0]["tokens"], serde_json::json!(14));
-    assert_eq!(library[1]["name"], serde_json::json!("demo-scan"));
-    assert_eq!(library[1]["tokens"], serde_json::json!(13));
-    let source = library[0]["source"].as_str().unwrap();
-    assert!(
-        source.starts_with(skills.to_str().unwrap()),
-        "source should point into the library: {source}"
-    );
-}
-
-#[test]
-fn tui_policy_json_twin_reports_layers() {
-    let home = scratch();
-    if !menu_screens_available() { return; }
-    let cwd = scratch();
-    fs::create_dir_all(home.path().join(".lunchbox")).unwrap();
-    fs::write(
-        home.path().join(".lunchbox").join("config.toml"),
-        "deny = [\"x\"]\n",
-    )
-    .unwrap();
-    fs::write(cwd.path().join("lunchbox.toml"), "deny = [\"y\"]\n").unwrap();
-    let output = twin_stdout(&["tui", "policy", "--json"], home.path(), cwd.path());
-    let report: Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["global"]["exists"], serde_json::json!(true));
-    assert_eq!(report["global"]["deny"], serde_json::json!(["x"]));
-    assert_eq!(report["project"]["exists"], serde_json::json!(true));
-    assert_eq!(report["project"]["deny"], serde_json::json!(["y"]));
-    assert_eq!(report["effective"]["deny"], serde_json::json!(["x", "y"]));
-    assert_eq!(report["effective"]["allow"], serde_json::json!([]));
+        .stderr(predicates::str::contains("unrecognized subcommand"));
+    let help = lbx()
+        .arg("--help")
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let help = String::from_utf8(help).unwrap();
+    assert!(help.contains("menu"), "{help}");
+    assert!(!help.contains("tui"), "{help}");
 }
 
 #[test]
 fn feature_006_policy_edit_persists_to_project_layer_and_denies() {
-    if !menu_screens_available() { return; }
     let home = scratch();
     let cwd = scratch();
     fs::write(
@@ -198,10 +66,7 @@ fn feature_006_policy_edit_persists_to_project_layer_and_denies() {
         "# project layer\nmount_mode = \"copy\"\n",
     )
     .unwrap();
-    let before = twin_stdout(&["tui", "policy", "--json"], home.path(), cwd.path());
-    let report: Value = serde_json::from_slice(&before).unwrap();
-    assert_eq!(report["project"]["exists"], serde_json::json!(true));
-    assert_eq!(report["effective"]["deny"], serde_json::json!([]));
+
 
     let skills = demo_skills();
     lbx()
@@ -221,10 +86,6 @@ fn feature_006_policy_edit_persists_to_project_layer_and_denies() {
 
     config::append_deny_entry(cwd.path().join("lunchbox.toml").to_str().unwrap(), "demo-scan");
 
-    let after = twin_stdout(&["tui", "policy", "--json"], home.path(), cwd.path());
-    let report: Value = serde_json::from_slice(&after).unwrap();
-    assert_eq!(report["project"]["deny"], serde_json::json!(["demo-scan"]));
-    assert_eq!(report["effective"]["deny"], serde_json::json!(["demo-scan"]));
 
     lbx()
         .args([

@@ -6,6 +6,23 @@ edits that a user would not notice do not belong here.
 
 ## [Unreleased]
 
+### Changed (breaking, menu milestone)
+
+- 2026-09-08 — Feature-017 passed (ADR-0007): `lunchbox menu` is the
+  single interactive app — Home routes to Pantry (skill roots, pack
+  composition, start behind a confirmation gate showing adapter, pinned
+  hashes, and token cost), Manifests (discovery in
+  `./lunchbox/manifests` then `~/.lunchbox/manifests`, project wins on
+  name collision), Doctor, and Policy. The `tui doctor|preview|picker|policy`
+  subcommands are removed (breaking — release as 0.3.0); scripted
+  callers keep `doctor --json`, `start --json`, and `start --dry-run`.
+
+### Added (fail-closed start)
+
+- 2026-09-08 — Feature-016 passed: `start` with zero `--skill` pins and
+  no `--from` errors loudly (`no skills pinned: …`) and leaves no run
+  directory, in plain, `--json`, and `--dry-run` forms.
+
 ### Added (driver skill)
 
 - 2026-09-08 — Feature-015 passed. `skills/lunchbox/SKILL.md`: a driver

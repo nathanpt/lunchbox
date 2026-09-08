@@ -1,8 +1,0 @@
----
-source: src/tui/preview.rs
-expression: "frame_to_string(frame.buffer, frame.area)"
----
-▸ [x] demo-review      14          this run  27
-  [x] demo-scan        13          without   27
-                                   delta     0
-                                   budget    max 2000  ok

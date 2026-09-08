@@ -1,0 +1,11 @@
+---
+source: src/tui/menu/confirm.rs
+expression: "frame_to_string(frame.buffer, frame.area)"
+---
+adapter        none — mounted, not spawned
+skills         demo-review@sha256:80d0644a7a96128261b5431287e6619c7d0143
+skills         demo-scan@sha256:0fc41caa3efe95c5224f4b2ddeea5531719bed9f
+menu_tokens    this run: 27
+task           menu run
+
+Enter mount · Esc cancel

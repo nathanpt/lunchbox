@@ -1,6 +1,0 @@
----
-source: src/tui/picker.rs
-expression: "frame_to_string(frame.buffer, frame.area)"
----
-  [x] demo-review      14
-▸ [x] demo-scan        13
