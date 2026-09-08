@@ -4,7 +4,6 @@ mod hash;
 mod library;
 mod mount;
 mod pantry;
-#[cfg(all(feature = "tui-doctor", feature = "tui-menu"))]
 mod manifests;
 mod resolve;
 mod run;
@@ -20,7 +19,7 @@ use run::{Manifest, Outcome, PreparedRun};
 use serde_json::json;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 use std::time::Duration;
 
@@ -97,7 +96,7 @@ struct StartArgs {
     keep: bool,
     #[arg(long)]
     dry_run: bool,
-    #[arg(long = "from", value_name = "PATH")]
+    #[arg(long = "from", value_name = "MANIFEST")]
     from: Option<String>,
     #[arg(long)]
     override_scan: bool,
@@ -261,7 +260,7 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
             if !args.skills.is_empty() {
                 bail!("--skill and --from are mutually exclusive; put pins in the manifest workers");
             }
-            let parsed = run::read_manifest_input(Path::new(from))?;
+            let parsed = run::read_manifest_input(&manifests::resolve_from(from)?)?;
             let input = parsed.validate()?;
             (
                 args.adapter

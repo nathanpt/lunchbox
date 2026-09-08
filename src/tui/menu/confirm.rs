@@ -12,7 +12,6 @@ use std::path::PathBuf;
 #[derive(Clone)]
 pub enum Source {
     Flat(Vec<String>),
-    #[allow(dead_code)]
     Manifest(run::ManifestInput),
 }
 

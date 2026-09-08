@@ -268,7 +268,7 @@
         "start --from <name> resolves a bare name against the discovery dirs (project first, then home); a missing name fails closed listing candidates; --from <path> is unchanged",
         "starting from the editor or menu requires the same explicit confirmation screen as feature-017; tests cover validation arms, TOML round-trip, and name resolution"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 16,
       "dependencies": [
         "feature-017"

@@ -88,3 +88,9 @@ Option 3 (user-selected 2026-09-08). Concretely:
   both screens); partial-feature builds get the same rebuild hint as
   CLI-only builds. Dev-only `portable-pty` + `vt100` drive pty E2E
   tests of the real binary; runtime dependencies are unchanged.
+- Addendum (2026-09-08, feature-018 implementation): the menu gains the
+  manifest editor (workers/packs/task/adapter/budget with live
+  fail-closed validation). Saves are format-preserving outside the
+  rebuilt `[[workers]]` array (comments inside it are not preserved);
+  `start --from <name>` resolves a bare name against the discovery
+  dirs, with `--from <path>` unchanged.

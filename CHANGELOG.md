@@ -23,6 +23,16 @@ edits that a user would not notice do not belong here.
   no `--from` errors loudly (`no skills pinned: …`) and leaves no run
   directory, in plain, `--json`, and `--dry-run` forms.
 
+### Added (manifest editor)
+
+- 2026-09-08 — Feature-018 passed (ADR-0007): the menu gains a manifest
+  editor — add/remove/rename workers, edit task/adapter/budget, toggle
+  skills into packs — with live fail-closed validation blocking saves,
+  format-preserving TOML saves (toml_edit) into `./lunchbox/manifests/`
+  or `~/.lunchbox/manifests/`, and an optional `name@sha256:<64 hex>`
+  pin mode. `start --from <name>` now resolves a bare manifest name
+  against those dirs (project first); `--from <path>` is unchanged.
+
 ### Added (driver skill)
 
 - 2026-09-08 — Feature-015 passed. `skills/lunchbox/SKILL.md`: a driver

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 pub mod confirm;
 pub mod home;
+pub mod editor;
 pub mod manifests;
 pub mod pantry;
 
@@ -30,6 +31,10 @@ pub enum Action {
         task: String,
     },
     Quit,
+    EditManifest(crate::manifests::DiscoveredManifest),
+    NewEditor,
+    EditorSave,
+    EditorSaveAndStart,
 }
 
 pub enum Layer {
@@ -40,6 +45,7 @@ pub enum Layer {
     Doctor(crate::tui::doctor::DoctorState),
     Policy(crate::tui::policy::PolicyState),
     Confirm(ConfirmState),
+    Editor(editor::EditorState),
 }
 
 pub struct MenuState {
@@ -183,12 +189,16 @@ impl MenuState {
                 crate::tui::policy::Action::Quit => Action::Pop,
             },
             Some(Layer::Confirm(state)) => confirm::handle_event(state, event),
+            Some(Layer::Editor(state)) => editor::handle_event(state, event),
         };
         match action {
             Action::Continue => Ok(false),
             Action::Pop => {
                 if self.stack.len() > 1 {
                     self.stack.pop();
+                    if let Some(Layer::Manifests(state)) = self.stack.last_mut() {
+                        *state = ManifestsState::build(&self.cfg, &self.libraries)?;
+                    }
                 }
                 Ok(false)
             }
@@ -215,6 +225,46 @@ impl MenuState {
                 }
                 Ok(false)
             }
+            Action::EditManifest(manifest) => {
+                match editor::EditorState::load(manifest.path, &self.cfg, &self.libraries) {
+                    Ok(editor) => self.stack.push(Layer::Editor(editor)),
+                    Err(error) => self.status = format!("cannot edit: {error:#}"),
+                }
+                Ok(false)
+            }
+            Action::NewEditor => {
+                match editor::EditorState::new_draft(&self.cfg, &self.libraries) {
+                    Ok(editor) => self.stack.push(Layer::Editor(editor)),
+                    Err(error) => self.status = format!("cannot start editor: {error:#}"),
+                }
+                Ok(false)
+            }
+            Action::EditorSave => {
+                if let Some(Layer::Editor(state)) = self.stack.last_mut() {
+                    if let Err(error) = editor::save(state, &self.cfg, &self.libraries) {
+                        state.status = format!("save failed: {error:#}");
+                    }
+                }
+                Ok(false)
+            }
+            Action::EditorSaveAndStart => {
+                let input = match self.stack.last_mut() {
+                    Some(Layer::Editor(state)) => {
+                        match editor::save(state, &self.cfg, &self.libraries) {
+                            Ok(_) => state.build_input(),
+                            Err(error) => {
+                                state.status = format!("save failed: {error:#}");
+                                return Ok(false);
+                            }
+                        }
+                    }
+                    _ => return Ok(false),
+                };
+                let confirm =
+                    ConfirmState::new(confirm::Source::Manifest(input), &self.cfg, &self.libraries);
+                self.stack.push(Layer::Confirm(confirm));
+                Ok(false)
+            }
         }
     }
 }
@@ -228,6 +278,7 @@ fn draw_layer(layer: Option<&mut Layer>, frame: &mut Frame, area: Rect) {
         Some(Layer::Doctor(state)) => crate::tui::doctor::render(state, frame, area),
         Some(Layer::Policy(state)) => crate::tui::policy::render(state, frame, area),
         Some(Layer::Confirm(state)) => confirm::render(state, frame, area),
+        Some(Layer::Editor(state)) => editor::render(state, frame, area),
         None => {}
     }
 }
@@ -241,6 +292,7 @@ fn status_line(state: &MenuState) -> String {
                 policy.status.clone()
             }
         }
+        Some(Layer::Editor(editor)) => editor.prompt(),
         _ => state.status.clone(),
     }
 }
@@ -254,6 +306,9 @@ fn footer_text(state: &MenuState) -> &'static str {
         Some(Layer::Doctor(_)) => "↑/↓ scroll · Esc back",
         Some(Layer::Policy(_)) => "Tab layer · ←/→ list · a add · Esc back",
         Some(Layer::Confirm(_)) => "Enter mount · Esc cancel · f finish",
+        Some(Layer::Editor(_)) => {
+            "Tab pane · ↑/↓ move · Space pack · r rename · d delete · w add · t task · b budget · c adapter · p pin · s save · S save+start"
+        }
         None => "",
     }
 }

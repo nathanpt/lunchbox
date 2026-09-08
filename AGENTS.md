@@ -11,15 +11,19 @@ sees only the locked Skills for that job. `docs/design-docs/DESIGN.md` is
 the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
-- Current phase: v1 + Path B + scan hook + pantry + driver Skill
-  complete (features 001–015 all passing), distributed as `v0.2.0`
-  (latest tag; `v0.1.0` first) — MIT, git-only install per ADR-0005
-  Pi + Omp Path A adapters, the four TUI screens, the README (DESIGN
-  §22/§25), `--from` multi-worker runs with run-local agent files (DESIGN
-  §14 print mode, ADR-0003), the `scan_command` policy gate with
-  `--override-scan` (ADR-0004), thin git acquisition — `add` / `update`
-  into `~/.lunchbox/pantry` (ADR-0006) — and the `skills/lunchbox/`
-  driver Skill, closing out DESIGN §22 "Next (v1.x)".
+- Current phase: v1 + Path B + scan hook + pantry + driver Skill + menu
+  TUI milestone complete (features 001–018 all passing); last release
+  `v0.2.0` (latest tag; `v0.1.0` first) — MIT, git-only install per
+  ADR-0005; the menu milestone's breaking `tui <screen>` removal is
+  CHANGELOG-recorded for a future `0.3.0` tag. Pi + Omp Path A
+  adapters, the README (DESIGN §22/§25), `--from` multi-worker runs
+  with run-local agent files and bare-name resolution (ADR-0003/0007),
+  the `scan_command` policy gate with `--override-scan` (ADR-0004),
+  thin git acquisition — `add` / `update` into `~/.lunchbox/pantry`
+  (ADR-0006), the `skills/lunchbox/` driver Skill, fail-closed pinless
+  `start`, and the `lunchbox menu` app (Pantry, Manifests + editor,
+  Doctor, Policy; ADR-0007) replacing the four single-purpose TUI
+  screens.
 - Language/runtime: Rust, unconditional —
   `docs/decisions/0001-rust-unconditional.md` (ADR-0001).
 

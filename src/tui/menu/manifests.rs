@@ -67,6 +67,7 @@ pub fn handle_event(state: &mut ManifestsState, event: &Event) -> Action {
         return match (key.code, key.modifiers) {
             (KeyCode::Char('q'), _) => Action::Quit,
             (KeyCode::Esc, _) => Action::Pop,
+            (KeyCode::Char('n'), KeyModifiers::NONE) => Action::NewEditor,
             _ => Action::Continue,
         };
     }
@@ -83,6 +84,10 @@ pub fn handle_event(state: &mut ManifestsState, event: &Event) -> Action {
             Action::Continue
         }
         (KeyCode::Enter, _) => Action::Detail(state.manifests[state.cursor].clone()),
+        (KeyCode::Char('e'), KeyModifiers::NONE) => {
+            Action::EditManifest(state.manifests[state.cursor].clone())
+        }
+        (KeyCode::Char('n'), KeyModifiers::NONE) => Action::NewEditor,
         _ => Action::Continue,
     }
 }

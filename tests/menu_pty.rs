@@ -172,3 +172,65 @@ fn menu_e2e_doctor_route() {
     assert!(wait_exit(&mut app));
 }
 
+
+#[test]
+fn menu_e2e_editor_roundtrip() {
+    let home = fixture_home();
+    let cwd = scratch();
+    let mut app = spawn_menu(home.path(), cwd.path());
+    expect(&app, "Pantry");
+    send(&mut app, "\x1b[B");
+    send(&mut app, "\r");
+    expect(&app, "no manifests found");
+    send(&mut app, "n");
+    expect(&app, "manifest name:");
+    send(&mut app, "e2e\r");
+    expect(&app, "empty pack");
+    send(&mut app, "t");
+    send(&mut app, "demo task\r");
+    expect(&app, "demo task");
+    send(&mut app, " ");
+    send(&mut app, "\x1b[B");
+    send(&mut app, " ");
+    expect(&app, "ok — s save · S save+start");
+    send(&mut app, "s");
+    expect(&app, "wrote");
+    expect(&app, "lunchbox/manifests/e2e.toml");
+    send(&mut app, "\x1b");
+    expect(&app, "e2e");
+    send(&mut app, "q");
+    assert!(wait_exit(&mut app));
+    drop(app);
+
+    let saved = cwd.path().join("lunchbox").join("manifests").join("e2e.toml");
+    let text = std::fs::read_to_string(&saved).unwrap();
+    assert!(text.contains("schema = 1"), "{text}");
+    assert!(text.contains("pack = ["), "{text}");
+    assert!(text.contains("\"demo-review\""), "{text}");
+    assert!(text.contains("\"demo-scan\""), "{text}");
+
+    let home2 = fixture_home();
+    Command::cargo_bin("lunchbox")
+        .unwrap()
+        .args(["start", "--from", "e2e", "--adapter", "none"])
+        .env("HOME", home2.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("menu_tokens    this run: 27"));
+    Command::cargo_bin("lunchbox")
+        .unwrap()
+        .arg("finish")
+        .env("HOME", home2.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    Command::cargo_bin("lunchbox")
+        .unwrap()
+        .args(["start", "--from", "missing"])
+        .env("HOME", home2.path())
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("e2e"));
+}

@@ -556,6 +556,7 @@ Also:
 
 ```text
 lunchbox start --from manifest.toml
+lunchbox start --from name            # bare name: discovery dirs, project first
 ```
 
 `--from` rules (ADR-0003): `--skill` and `--from` are mutually exclusive —

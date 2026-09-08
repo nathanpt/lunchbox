@@ -1,28 +1,57 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-08 (menu milestone, feature-016)
+Last updated: 2026-09-08 (menu milestone complete, features 016–018)
 
 ## Current repository state
 
-v1 + Path B + scan hook + pantry + driver Skill complete. Phase 1 + TUI
-milestone + two simplify passes + the README/Omp milestone + the Path B
-milestone + the scan-hook milestone + the pantry (thin git installer)
-milestone + the driver Skill: core CLI, Pi and Omp Path A adapters, the
-four v1 TUI screens behind cargo features, the DESIGN §25 README,
-`--from manifest.toml` multi-worker runs with run-local agent files, the
-`scan_command` policy gate with `--override-scan` (ADR-0004), `lunchbox
-add` / `update` acquiring whole skill repos into `~/.lunchbox/pantry`
-(ADR-0006 — the 2026-09-08 pivot that narrowed the "not a skill manager"
-posture to per-skill management), and the `skills/lunchbox/` driver
-Skill closing out DESIGN §22 "Next". 115 unit + 36 integration tests
-green in the default configuration, 100 + 36 with
-`--no-default-features`, zero warnings in both. **Features 001–015 all
-pass.** Branch `main`; tree clean after each phase commit.
+v1 + Path B + scan hook + pantry + driver Skill + the menu TUI milestone
+complete. Core CLI, Pi and Omp Path A adapters, `--from` manifests
+(now with bare-name resolution against the discovery dirs), the
+`scan_command` gate, thin git pantry (`add`/`update`), the driver Skill,
+fail-closed pinless `start`, and the `lunchbox menu` app (Pantry,
+Manifests + editor, Doctor, Policy, confirmation-gated mounts) that
+replaced the four `tui <screen>` subcommands (ADR-0007; breaking,
+0.3.0-pending). 132 unit + 33 cli + 4 pty E2E tests green in the
+default configuration, 107 + 33 with `--no-default-features`, zero
+warnings in both. **Features 001–018 all pass.** Branch `main`; tree
+clean after each phase commit.
 
 Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
 prebuilt Release binaries deferred.
 
+
+## Menu milestone — feature-018 (2026-09-08, this machine)
+
+Manifest editor + `--from` name resolution: `src/tui/menu/editor.rs`
+(workers/packs/task/adapter/budget, live validation via
+`ManifestInput::validate`, policy-style input mode, toml_edit
+format-preserving atomic saves, optional `name@sha256:<64 hex>` pins) and
+`manifests::resolve_from` (bare name → discovery dirs, project first;
+`--from <path>` unchanged; miss lists candidates).
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 132 unit + 33 cli + 4 menu_pty, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 107 + 33, 0 failed, 0 warnings |
+| Editor pty E2E | `cargo test --test menu_pty editor_roundtrip` | ok — menu → Manifests → `n` → name `e2e` → task `demo task` → Space,↓,Space → `s` → `wrote …/lunchbox/manifests/e2e.toml`; file has `schema = 1` + both demo pins; `start --from e2e --adapter none` → `menu_tokens    this run: 27` then `finish`; `start --from missing` fails listing `e2e` |
+| Name resolution gate | `HOME=<fresh> lunchbox start --from e2e --adapter none` (cwd with `lunchbox/manifests/e2e.toml`) | mounts (`menu_tokens this run: 14`); `finish` cleans |
+| Miss gate | `HOME=<fresh> lunchbox start --from missing` | `error: manifest 'missing' not found in any discovery dir (searched: lunchbox/manifests, ~/.lunchbox/manifests); available: e2e`; exit=1 |
+
+Deviations: (1) the plan's `Action::ConfirmManifest` variant folded into
+`EditorSaveAndStart` (same behavior, one code path); (2) editor opens
+focused on the Skills pane so Space/↓/Space composes a pack immediately
+(plan's pty flow assumed it); (3) Task/Budget/Rename inputs prefill the
+current value (plan silent; append-edit with Backspace is the natural
+policy.rs-style behavior); (4) `n` works on an empty Manifests list (the
+empty-list early return initially swallowed it — caught by the pty E2E).
+
+## Menu milestone wrap-up (2026-09-08)
+
+Features 016–018 all pass; the exec plan moved to
+`docs/exec-plans/completed/menu-tui-milestone.md`. The 0.3.0 release
+(breaking `tui <screen>` removal) is a separate packaging step per
+ADR-0005/0007 — CHANGELOG `[Unreleased]` records the change.
 
 ## Menu milestone — feature-017 (2026-09-08, this machine)
 
