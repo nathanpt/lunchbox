@@ -12,10 +12,10 @@ the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
 - Current phase: v1 + Path B + scan hook + pantry + driver Skill + menu
-  TUI milestone complete (features 001–018 all passing); last release
-  `v0.2.0` (latest tag; `v0.1.0` first) — MIT, git-only install per
-  ADR-0005; the menu milestone's breaking `tui <screen>` removal is
-  CHANGELOG-recorded for a future `0.3.0` tag. Pi + Omp Path A
+  TUI milestone complete (features 001–018 all passing), distributed as
+  `v0.3.0` (latest tag; `v0.1.0`/`v0.2.0` earlier) — MIT, git-only
+  install per ADR-0005; the menu milestone's breaking `tui <screen>`
+  removal ships in `0.3.0` per ADR-0007. Pi + Omp Path A
   adapters, the README (DESIGN §22/§25), `--from` multi-worker runs
   with run-local agent files and bare-name resolution (ADR-0003/0007),
   the `scan_command` policy gate with `--override-scan` (ADR-0004),

@@ -1,6 +1,6 @@
 [package]
 name = "lunchbox"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Run-scoped skill runtime: mount a sealed per-run Skill set, hand it to a worker, always unmount."
 license = "MIT"
