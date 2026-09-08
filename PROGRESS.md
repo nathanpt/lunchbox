@@ -1,6 +1,6 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-08 (driver skill)
+Last updated: 2026-09-08 (menu milestone, feature-016)
 
 ## Current repository state
 
@@ -23,6 +23,21 @@ Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
 prebuilt Release binaries deferred.
 
+
+## Menu milestone — feature-016 (2026-09-08, this machine)
+
+`start` fails closed with no pins (feature-016): zero `--skill` and no
+`--from` bail before `Config::load()` in `cmd_start`, so no run dir is
+created and nothing spawns in plain, `--json`, and `--dry-run` forms.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 115 unit + 37 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 100 + 36 integration, 0 failed, 0 warnings |
+| Pinless arms | `cargo test --test cli pinless` | ok — `feature_016_pinless_start_fails_closed` (start, --json, --dry-run, --adapter none) |
+| Pinless gate | `HOME=<tmp> lunchbox start; echo $?` | `error: no skills pinned: pass --skill <name>[@sha256:<64 hex>], --from <manifest>, or use lunchbox menu`; exit=1 |
+| No run dir | `test ! -d <tmp>/.lunchbox` | NO_RUN_DIR |
+| Pinned unchanged | `HOME=<tmp> lunchbox start --library testdata/skills --skill demo-review --skill demo-scan --adapter none` | `menu_tokens    this run: 27`; exit 0 |
 
 ## Driver skill verification (2026-09-08, this machine)
 

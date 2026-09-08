@@ -342,6 +342,30 @@ fn deny_gate_leaves_no_run_dir() {
 }
 
 #[test]
+fn feature_016_pinless_start_fails_closed() {
+    for args in [
+        vec!["start"],
+        vec!["start", "--json"],
+        vec!["start", "--dry-run"],
+        vec!["start", "--adapter", "none"],
+    ] {
+        let home = scratch();
+        let cwd = scratch();
+        lbx()
+            .args(&args)
+            .env("HOME", home.path())
+            .current_dir(cwd.path())
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("no skills pinned"));
+        assert!(
+            !home.path().join(".lunchbox").exists(),
+            "{args:?} must not create a run dir"
+        );
+    }
+}
+
+#[test]
 fn feature_002_doctor_reports_tree_without_mounting() {
     let home = scratch();
     let skills = demo_skills();

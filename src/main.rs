@@ -383,6 +383,9 @@ fn tui_policy(json: bool) -> Result<ExitCode> {
 }
 
 fn cmd_start(args: StartArgs) -> Result<ExitCode> {
+    if args.skills.is_empty() && args.from.is_none() {
+        bail!("no skills pinned: pass --skill <name>[@sha256:<64 hex>], --from <manifest>, or use lunchbox menu");
+    }
     let cfg = Config::load()?;
     let mut harness_argv = args.harness_argv.clone();
     if harness_argv.first().map(String::as_str) == Some("--") {
