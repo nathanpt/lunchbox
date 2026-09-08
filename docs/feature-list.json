@@ -209,6 +209,21 @@
       "dependencies": [
         "feature-001"
       ]
+    },
+    {
+      "id": "feature-015",
+      "category": "functional",
+      "description": "Driver Skill: skills/lunchbox/SKILL.md teaches a mounted agent to drive the lunchbox CLI (mount a sealed set, spawn the worker, always unmount) and is itself a valid pantry member acquirable via add",
+      "steps": [
+        "skills/lunchbox/SKILL.md exists with name lunchbox frontmatter and teaches the run loop: doctor to see cost, start with explicit pins, worker sees only the mount, finish always (fail-closed semantics and teardown discipline stated)",
+        "It is a valid pantry member: start --library skills --skill lunchbox --adapter none mounts exactly it from a clone and finish unmounts",
+        "It is acquirable: lunchbox add <this repository's url> auto-detects the skills/ subdirectory as the pantry root, and start --skill lunchbox resolves with no --library"
+      ],
+      "passes": false,
+      "priority": 13,
+      "dependencies": [
+        "feature-014"
+      ]
     }
   ]
 }

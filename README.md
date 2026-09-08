@@ -137,6 +137,10 @@ Skills you already keep work unchanged: `--library <dir>` per run,
 `~/.agents/skills`. Your configured paths win when the same name exists
 in both a managed pantry and your own paths.
 
+This repository ships one Skill itself: `lunchbox add
+https://github.com/nathanpt/lunchbox` mounts the pantry at its `skills/`
+directory, giving an agent the `lunchbox` driver Skill.
+
 ## menu_tokens, before and after
 
 `doctor` reports the cost of the menu your agent would eat without
