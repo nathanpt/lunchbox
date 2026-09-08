@@ -493,7 +493,16 @@ deny-after-write all exercised against the built binary.
 
 ## Active work
 
-None in flight.
+Menu TUI milestone planned (features 016–018, all currently failing):
+exec-plan `docs/exec-plans/active/menu-tui-milestone.md`, contract
+ADR-0007 (`docs/decisions/0007-menu-tui-surface.md`). User decisions
+2026-09-08: bare `lunchbox` stays help-only; `lunchbox menu` is the
+single interactive app (Pantry / Manifests / Editor / Doctor /
+Policy); manifest discovery in `./lunchbox/manifests/` +
+`~/.lunchbox/manifests/`; full manifest editor; `tui <screen>`
+subcommands removed when `menu` lands (breaking, 0.3.0). Trigger:
+`lunchbox start` with zero pins silently spawns an empty agent
+(reproduced 2026-09-08) — feature-016 fixes that first.
 
 ## Blockers and unknowns
 
@@ -504,7 +513,7 @@ None in flight.
 
 ## Next useful move
 
-Nothing in flight — DESIGN §22 "Next (v1.x)" is exhausted (features
-001–015 all pass). Candidates from §22 "Later": Claude/Codex adapters
-with honest "cannot isolate" mode, `qvr.lock` ingest, Kitter library
-path autodetect, Windows junctions, real sandbox for scripts.
+feature-016: make `start` fail closed with no pins (exec-plan step 1),
+then the menu app (017) and the manifest editor (018). CI/script
+callers are untouched by design — interactivity is confined to
+`lunchbox menu`.

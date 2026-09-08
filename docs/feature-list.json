@@ -224,6 +224,55 @@
       "dependencies": [
         "feature-014"
       ]
+    },
+    {
+      "id": "feature-016",
+      "category": "functional",
+      "description": "start fails closed with no pins: zero --skill pins and no --from error loudly and leave no run directory instead of mounting an empty set and spawning the default adapter",
+      "steps": [
+        "start with no pins in plain, --json, and --dry-run forms exits non-zero with a message naming the fix (--skill <name>[@sha256:<64 hex>], --from <manifest>, or lunchbox menu) and creates no run directory and spawns nothing",
+        "pinned runs are unchanged: runs with at least one --skill or a --from manifest keep identical output shape, spawn behavior, and exit codes",
+        "failing and regression test arms cover all three forms and the pinned paths; cargo test green in both feature configurations"
+      ],
+      "passes": false,
+      "priority": 14,
+      "dependencies": [
+        "feature-001"
+      ]
+    },
+    {
+      "id": "feature-017",
+      "category": "functional",
+      "description": "lunchbox menu: a single interactive TUI app (tui cargo features) with Pantry, Manifests, Doctor, and Policy screens, start-from-selection behind an explicit confirmation, replacing and removing the tui <screen> subcommands (breaking, released as 0.3.0; ADR-0007)",
+      "steps": [
+        "lunchbox menu opens a full-screen mode-stack app behind the tui features (CLI-only builds error with a rebuild hint); bare lunchbox and every other subcommand stay non-interactive with no TTY detection anywhere",
+        "Pantry screen sections for managed pantries (healthy/broken), library_paths, and default .agents/skills roots with counts and duplicates; the focused root's skills list; selecting skills and confirming on a screen showing adapter, exact skills+hashes, and token cost starts a run through the same code path as CLI start",
+        "Manifests screen lists manifests discovered in ./lunchbox/manifests/*.toml then ~/.lunchbox/manifests/*.toml (project wins on name collision) with task, worker count, and token estimate; entering one shows each worker's pack; a bottom status bar shows live/last run state with a finish action",
+        "the tui doctor|preview|picker|policy subcommands are removed (clean cutover): doctor and policy become menu screens with unchanged behavior, picker's start flow is absorbed into Pantry, preview's role is covered by the confirmation screen and start --dry-run, and doctor --json / start --json keep serving scripted callers",
+        "in-process snapshot tests (TestBackend) cover the new screens and the confirmation gate; cargo test green in both feature configurations; CHANGELOG records the breaking change for 0.3.0"
+      ],
+      "passes": false,
+      "priority": 15,
+      "dependencies": [
+        "feature-002",
+        "feature-014"
+      ]
+    },
+    {
+      "id": "feature-018",
+      "category": "functional",
+      "description": "Manifest editor in the menu: create and edit manifests interactively (workers, packs, task, adapter, budget) with live fail-closed validation, format-preserving saves into a discovery dir, optional hash pins, and start --from resolving a bare manifest name against the discovery dirs",
+      "steps": [
+        "editor screen: add/remove/rename workers, edit task/adapter/budget, and toggle skills from the resolved union into the focused worker's pack; validation mirrors the --from parser rules live (schema, duplicate worker names, empty packs) and blocks saving while any error is present",
+        "save writes schema-1 TOML via toml_edit — format-preserving for existing files (comments and key order outside edited arrays survive byte-for-byte) — into ./lunchbox/manifests/ or ~/.lunchbox/manifests/ (choice offered, directory created); an optional toggle saves packs as name@sha256:<64 hex> pins",
+        "start --from <name> resolves a bare name against the discovery dirs (project first, then home); a missing name fails closed listing candidates; --from <path> is unchanged",
+        "starting from the editor or menu requires the same explicit confirmation screen as feature-017; tests cover validation arms, TOML round-trip, and name resolution"
+      ],
+      "passes": false,
+      "priority": 16,
+      "dependencies": [
+        "feature-017"
+      ]
     }
   ]
 }
