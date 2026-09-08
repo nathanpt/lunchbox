@@ -215,16 +215,7 @@ fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
         if !report.pantries.is_empty() {
             println!("pantries:");
             for pantry in &report.pantries {
-                match (&pantry.root, &pantry.error) {
-                    (Some(root), _) => println!(
-                        "  {:<16} {}  {} skills",
-                        pantry.name,
-                        root.display(),
-                        pantry.skills
-                    ),
-                    (None, Some(error)) => println!("  {:<16} error: {}", pantry.name, error),
-                    (None, None) => println!("  {:<16} (no root)", pantry.name),
-                }
+                println!("{}", pantry.summary_line());
             }
         }
     }

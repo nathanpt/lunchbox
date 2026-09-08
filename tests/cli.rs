@@ -1601,10 +1601,19 @@ case "$1" in
         printf -- '---\nname: alpha\ndescription: a\n---\n' > "$dest/alpha/SKILL.md"
         printf -- '---\nname: beta\ndescription: b\n---\n' > "$dest/skills/beta/SKILL.md"
         ;;
+      *dupname*)
+        mkdir -p "$dest/skills/alpha" "$dest/skills/beta" "$dest/.git"
+        printf -- '---\nname: same\ndescription: a\n---\n' > "$dest/skills/alpha/SKILL.md"
+        printf -- '---\nname: same\ndescription: b\n---\n' > "$dest/skills/beta/SKILL.md"
+        ;;
     esac
     exit 0
     ;;
   -C)
+    [ "$3" = pull ] && [ "$4" = --ff-only ] || {
+      echo "unexpected git invocation: $*" >&2
+      exit 1
+    }
     case "$2" in
       *divergent*)
         echo "fatal: Not possible to fast-forward" >&2
@@ -1782,6 +1791,21 @@ fn add_failures_fail_closed() {
     assert!(!pantry_dir(home.path(), "clonefail").exists());
 
     lbx()
+        .args(["add", "https://example.com/you/dupname"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "two packages with the name 'same'",
+        ));
+    assert!(
+        !pantry_dir(home.path(), "dupname").exists(),
+        "a scan failure after a successful clone must still remove the clone"
+    );
+
+    lbx()
         .args(["add", "https://example.com/you/nested"])
         .env("HOME", home.path())
         .env("PATH", &path_with_mock_bin(cwd.path()))
@@ -1813,6 +1837,23 @@ fn update_reports_and_fails_loudly() {
         .current_dir(cwd.path())
         .assert()
         .success();
+    lbx()
+        .args(["update", "nested"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("updated        nested"));
+
+    fs::create_dir_all(
+        home.path()
+            .join(".lunchbox")
+            .join("pantry")
+            .join("junk")
+            .join("stuff"),
+    )
+    .unwrap();
     lbx()
         .args(["update", "nested"])
         .env("HOME", home.path())

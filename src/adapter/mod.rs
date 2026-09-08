@@ -161,7 +161,7 @@ pub fn doctor_report(adapter: &dyn Adapter, cfg: &Config) -> Result<DoctorReport
         adapter_version,
         git_version,
         dirs,
-        pantries: crate::pantry::pantry_statuses(),
+        pantries: crate::pantry::pantry_statuses()?,
         menu_tokens,
         union,
     })
@@ -187,13 +187,21 @@ impl DoctorReport {
                 "exists": r.exists,
                 "skills": r.skills.len(),
             })).collect::<Vec<_>>(),
-            "pantries": self.pantries.iter().map(|p| serde_json::json!({
-                "name": p.name,
-                "repo": p.repo,
-                "root": p.root,
-                "skills": p.skills,
-                "error": p.error,
-            })).collect::<Vec<_>>(),
+            "pantries": self.pantries.iter().map(|p| {
+                let (root, skills, error) = match &p.state {
+                    crate::pantry::PantryState::Healthy { root, skills } => {
+                        (Some(root), *skills, None)
+                    }
+                    crate::pantry::PantryState::Broken(error) => (None, 0, Some(error)),
+                };
+                serde_json::json!({
+                    "name": p.name,
+                    "repo": p.repo,
+                    "root": root,
+                    "skills": skills,
+                    "error": error,
+                })
+            }).collect::<Vec<_>>(),
             "menu_tokens": self.menu_tokens,
             "fattest": fattest.iter().map(|s| serde_json::json!({"name": s.name, "tokens": s.tokens})).collect::<Vec<_>>(),
             "duplicates": duplicates.iter().map(|group| group.iter().map(|s| s.name.clone()).collect::<Vec<_>>()).collect::<Vec<_>>(),

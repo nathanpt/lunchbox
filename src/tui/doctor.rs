@@ -58,17 +58,7 @@ pub fn render(state: &mut DoctorState, frame: &mut Frame, area: Rect) {
     if !report.pantries.is_empty() {
         lines.push(Line::from("pantries:"));
         for pantry in &report.pantries {
-            let line = match (&pantry.root, &pantry.error) {
-                (Some(root), _) => format!(
-                    "  {:<16} {}  {} skills",
-                    pantry.name,
-                    root.display(),
-                    pantry.skills
-                ),
-                (None, Some(error)) => format!("  {:<16} error: {}", pantry.name, error),
-                (None, None) => format!("  {:<16} (no root)", pantry.name),
-            };
-            lines.push(Line::from(line));
+            lines.push(Line::from(pantry.summary_line()));
         }
     }
     lines.push(Line::from(""));

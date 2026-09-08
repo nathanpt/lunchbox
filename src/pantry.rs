@@ -3,12 +3,6 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
-pub struct ManagedPantry {
-    pub name: String,
-    pub repo: PathBuf,
-    pub root: PathBuf,
-    pub path_override: Option<String>,
-}
 
 pub struct Added {
     pub name: String,
@@ -17,9 +11,7 @@ pub struct Added {
 }
 
 pub fn pantry_home() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .context("HOME is not set; cannot locate the managed pantry")?;
-    Ok(PathBuf::from(home).join(".lunchbox").join("pantry"))
+    Ok(crate::config::lunchbox_home()?.join("pantry"))
 }
 
 fn override_file(pantry_home: &Path, name: &str) -> PathBuf {
@@ -45,22 +37,19 @@ pub fn name_from_url(url: &str) -> Result<String> {
     Ok(name.to_string())
 }
 
-fn is_plain_component(name: &str) -> bool {
-    !name.is_empty()
-        && !name.starts_with('.')
-        && Path::new(name)
+fn is_normal_relative(path: &str) -> bool {
+    !path.is_empty()
+        && Path::new(path)
             .components()
             .all(|c| matches!(c, Component::Normal(_)))
 }
 
+fn is_plain_component(name: &str) -> bool {
+    is_normal_relative(name) && !name.starts_with('.')
+}
+
 fn validate_subdir(sub: &str) -> Result<()> {
-    let path = Path::new(sub);
-    if path.is_absolute()
-        || path.components().count() == 0
-        || !path
-            .components()
-            .all(|c| matches!(c, Component::Normal(_)))
-    {
+    if !is_normal_relative(sub) {
         bail!("--path must be a relative subdirectory without '.' or '..' components");
     }
     Ok(())
@@ -148,9 +137,8 @@ fn read_override(pantry_home: &Path, name: &str) -> Result<Option<String>> {
     }
 }
 
-fn raw_pantries() -> Result<Vec<(String, PathBuf, Option<String>)>> {
-    let home = pantry_home()?;
-    let entries = match fs::read_dir(&home) {
+fn raw_pantries(home: &Path) -> Result<Vec<(String, PathBuf, Option<String>)>> {
+    let entries = match fs::read_dir(home) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e).context(format!("failed to list {}", home.display())),
@@ -172,68 +160,65 @@ fn raw_pantries() -> Result<Vec<(String, PathBuf, Option<String>)>> {
     Ok(raw)
 }
 
-pub fn managed_pantries() -> Result<Vec<ManagedPantry>> {
-    raw_pantries()?
-        .into_iter()
-        .map(|(name, repo, path_override)| {
-            let root = detect_pantry_root(&name, &repo, path_override.as_deref())?;
-            Ok(ManagedPantry {
-                name,
-                repo,
-                root,
-                path_override,
-            })
-        })
-        .collect()
+pub fn resolve_roots() -> Result<Vec<PathBuf>> {
+    roots_at(&pantry_home()?)
 }
 
-pub fn resolve_roots() -> Result<Vec<PathBuf>> {
-    Ok(managed_pantries()?
+fn roots_at(home: &Path) -> Result<Vec<PathBuf>> {
+    raw_pantries(home)?
         .into_iter()
-        .map(|pantry| pantry.root)
-        .collect())
+        .map(|(name, repo, path_override)| {
+            detect_pantry_root(&name, &repo, path_override.as_deref())
+        })
+        .collect()
 }
 
 pub struct PantryStatus {
     pub name: String,
     pub repo: PathBuf,
-    pub root: Option<PathBuf>,
-    pub skills: usize,
-    pub error: Option<String>,
+    pub state: PantryState,
 }
 
-pub fn pantry_statuses() -> Vec<PantryStatus> {
-    let raw = match raw_pantries() {
-        Ok(raw) => raw,
-        Err(_) => return Vec::new(),
-    };
-    raw.into_iter()
-        .map(|(name, repo, path_override)| match detect_pantry_root(
-            &name,
-            &repo,
-            path_override.as_deref(),
-        ) {
-            Ok(root) => {
-                let skills = crate::library::scan_root(&root)
-                    .map(|skills| skills.len())
-                    .unwrap_or(0);
-                PantryStatus {
-                    name,
-                    repo,
-                    root: Some(root),
-                    skills,
-                    error: None,
-                }
-            }
-            Err(error) => PantryStatus {
-                name,
-                repo,
-                root: None,
-                skills: 0,
-                error: Some(format!("{error:#}")),
-            },
+pub enum PantryState {
+    Healthy { root: PathBuf, skills: usize },
+    Broken(String),
+}
+
+impl PantryStatus {
+    pub fn summary_line(&self) -> String {
+        match &self.state {
+            PantryState::Healthy { root, skills } => format!(
+                "  {:<16} {}  {} skills",
+                self.name,
+                root.display(),
+                skills
+            ),
+            PantryState::Broken(error) => format!("  {:<16} error: {}", self.name, error),
+        }
+    }
+}
+
+pub fn pantry_statuses() -> Result<Vec<PantryStatus>> {
+    statuses_at(&pantry_home()?)
+}
+
+fn statuses_at(home: &Path) -> Result<Vec<PantryStatus>> {
+    Ok(raw_pantries(home)?
+        .into_iter()
+        .map(|(name, repo, path_override)| {
+            let state = match detect_pantry_root(&name, &repo, path_override.as_deref()) {
+                Ok(root) => match crate::library::scan_root(&root) {
+                    Ok(skills) => PantryState::Healthy {
+                        root,
+                        skills: skills.len(),
+                    },
+                    Err(error) => PantryState::Broken(format!("{error:#}")),
+                },
+                Err(error) => PantryState::Broken(format!("{error:#}")),
+            };
+            PantryStatus { name, repo, state }
         })
-        .collect()
+        .collect())
 }
 
 pub fn add(url: &str, path: Option<&str>) -> Result<Added> {
@@ -267,36 +252,43 @@ pub fn add(url: &str, path: Option<&str>) -> Result<Added> {
     }
     let root = match detect_pantry_root(&name, &repo, path) {
         Ok(root) => root,
-        Err(error) => {
-            let _ = fs::remove_dir_all(&repo);
-            return Err(error);
-        }
+        Err(error) => return Err(discard_clone(&repo, error)),
+    };
+    let skills = match crate::library::scan_root(&root) {
+        Ok(skills) => skills.len(),
+        Err(error) => return Err(discard_clone(&repo, error)),
     };
     if let Some(sub) = path {
-        fs::write(override_file(&home, &name), format!("{sub}\n"))
-            .with_context(|| format!("failed to record --path for pantry '{name}'"))?;
+        if let Err(error) = fs::write(override_file(&home, &name), format!("{sub}\n")) {
+            let _ = fs::remove_dir_all(&repo);
+            return Err(error).context(format!("failed to record --path for pantry '{name}'"));
+        }
     }
-    let skills = crate::library::scan_root(&root)?.len();
     Ok(Added { name, root, skills })
 }
 
+fn discard_clone(repo: &Path, error: anyhow::Error) -> anyhow::Error {
+    let _ = fs::remove_dir_all(repo);
+    error
+}
+
 pub fn update(name: Option<&str>) -> Result<Vec<String>> {
-    let pantries = managed_pantries()?;
-    let selected: Vec<&ManagedPantry> = match name {
+    let raw = raw_pantries(&pantry_home()?)?;
+    let selected: Vec<&(String, PathBuf, Option<String>)> = match name {
         Some(want) => {
-            let found = pantries.iter().find(|pantry| pantry.name == want);
+            let found = raw.iter().find(|(pantry, _, _)| pantry == want);
             match found {
-                Some(pantry) => vec![pantry],
+                Some(entry) => vec![entry],
                 None => bail!("no managed pantry named '{want}'"),
             }
         }
-        None => pantries.iter().collect(),
+        None => raw.iter().collect(),
     };
     let mut updated = Vec::new();
-    for pantry in selected {
+    for (pantry, repo, path_override) in selected {
         let output = Command::new("git")
             .arg("-C")
-            .arg(&pantry.repo)
+            .arg(repo)
             .arg("pull")
             .arg("--ff-only")
             .output()
@@ -304,17 +296,13 @@ pub fn update(name: Option<&str>) -> Result<Vec<String>> {
         if !output.status.success() {
             bail!(
                 "failed to update managed pantry '{}' (exit {}){}",
-                pantry.name,
+                pantry,
                 output.status.code().unwrap_or(-1),
                 crate::resolve::stderr_excerpt(&output.stderr)
             );
         }
-        detect_pantry_root(
-            &pantry.name,
-            &pantry.repo,
-            pantry.path_override.as_deref(),
-        )?;
-        updated.push(pantry.name.clone());
+        detect_pantry_root(pantry, repo, path_override.as_deref())?;
+        updated.push(pantry.clone());
     }
     Ok(updated)
 }
@@ -322,8 +310,6 @@ pub fn update(name: Option<&str>) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::with_home;
-
     fn write_skill(dir: &Path, name: &str) {
         fs::create_dir_all(dir.join(name)).unwrap();
         fs::write(
@@ -428,35 +414,51 @@ mod tests {
     }
 
     #[test]
-    fn resolve_roots_list_managed_after_creation() {
-        let home = repo_home();
-        with_home(home.path(), || {
-            let pantry = home.path().join(".lunchbox").join("pantry");
-            write_skill(&pantry.join("agent-skills").join("skills"), "alpha");
-            let roots = resolve_roots().unwrap();
-            assert_eq!(
-                roots,
-                vec![pantry.join("agent-skills").join("skills")]
-            );
-        });
+    fn roots_at_lists_managed_and_skips_hidden() {
+        let dir = repo_home();
+        let pantry = dir.path().join("pantry");
+        write_skill(&pantry.join("agent-skills").join("skills"), "alpha");
+        fs::create_dir_all(pantry.join(".hidden").join("skills")).unwrap();
+        let roots = roots_at(&pantry).unwrap();
+        assert_eq!(
+            roots,
+            vec![pantry.join("agent-skills").join("skills")]
+        );
     }
 
     #[test]
     fn broken_pantry_fails_closed_but_reports() {
-        let home = repo_home();
-        with_home(home.path(), || {
-            let pantry = home.path().join(".lunchbox").join("pantry");
-            fs::create_dir_all(pantry.join("junk").join("stuff")).unwrap();
-            assert!(resolve_roots().is_err());
-            let statuses = pantry_statuses();
-            assert_eq!(statuses.len(), 1);
-            assert_eq!(statuses[0].name, "junk");
-            assert!(statuses[0].root.is_none());
-            assert!(
-                statuses[0].error.as_deref().unwrap().contains("no Skill packages"),
-                "{:?}",
-                statuses[0].error
-            );
-        });
+        let dir = repo_home();
+        let pantry = dir.path().join("pantry");
+        fs::create_dir_all(pantry.join("junk").join("stuff")).unwrap();
+        assert!(roots_at(&pantry).is_err());
+        let statuses = statuses_at(&pantry).unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].name, "junk");
+        match &statuses[0].state {
+            PantryState::Healthy { .. } => panic!("junk pantry must report broken"),
+            PantryState::Broken(error) => {
+                assert!(error.contains("no Skill packages"), "{error}")
+            }
+        }
+    }
+
+    #[test]
+    fn dup_name_pantry_scans_broken_not_healthy() {
+        let dir = repo_home();
+        let pantry = dir.path().join("pantry");
+        write_skill(&pantry.join("dup").join("skills"), "same");
+        write_skill(&pantry.join("dup").join("skills"), "beta");
+        let path = pantry.join("dup").join("skills").join("beta").join("SKILL.md");
+        fs::write(&path, "---\nname: same\ndescription: b\n---\n").unwrap();
+        let statuses = statuses_at(&pantry).unwrap();
+        match &statuses[0].state {
+            PantryState::Healthy { .. } => {
+                panic!("duplicate frontmatter names must report broken")
+            }
+            PantryState::Broken(error) => {
+                assert!(error.contains("two packages with the name 'same'"), "{error}")
+            }
+        }
     }
 }

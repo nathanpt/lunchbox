@@ -110,10 +110,14 @@ impl List {
     }
 }
 
-pub fn global_path() -> Result<PathBuf> {
+pub(crate) fn lunchbox_home() -> Result<PathBuf> {
     let home = env::var_os("HOME")
-        .context("HOME is not set; cannot locate the global lunchbox config")?;
-    Ok(PathBuf::from(home).join(".lunchbox").join("config.toml"))
+        .context("HOME is not set; cannot locate the lunchbox directory")?;
+    Ok(PathBuf::from(home).join(".lunchbox"))
+}
+
+pub fn global_path() -> Result<PathBuf> {
+    Ok(lunchbox_home()?.join("config.toml"))
 }
 
 pub fn project_path() -> PathBuf {

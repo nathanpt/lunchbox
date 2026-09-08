@@ -68,6 +68,52 @@ runs. The plan's `search_roots` ripple covered exactly the four listed
 call sites; the doctor snapshot update was the only pinned-output change
 (the expected `git [2.99.0]` line).
 
+## Post-pantry simplify pass (2026-09-08)
+
+Three-lane review (reuse / quality / efficiency) of the pantry milestone
+diff (`335960f`). Efficiency lane: no findings above the bar (measured:
+the pantry walk in `search_roots` is <0.1% of a `start` at 5 pantries;
+`git` detection is cold-path per the adapter precedent). Accepted and
+fixed: `add` left its clone behind on the two post-clone failure paths
+(override write; `scan_root` bailing on a repo with duplicate frontmatter
+names — runtime-proven) — scan now runs before the override write and
+every post-clone failure removes the clone (regression-tested via a
+`dupname` mock fixture); `pantry_statuses` swallowed listing and scan
+errors, so doctor reported health where `start` failed (chmod-000 pantry
+home → doctor silent; dup-name pantry → healthy `0 skills` row — both
+runtime-proven) — it now returns `Result` and propagates listing errors
+at `doctor_report` (the `detect_version` precedent) while scan failures
+fold into a `Broken` state; `PantryStatus` ok/broken states are an enum
+(`Healthy { root, skills }` / `Broken(String)`), deleting the dead
+`(None, None)` render arm and the `(Some, _)` wildcard; the pantries
+render block is one `PantryStatus::summary_line()` shared by CLI and TUI
+doctor (byte-identical output); the third hand-rolled HOME→`~/.lunchbox`
+resolution became `config::lunchbox_home()` reused by `global_path` and
+`pantry_home`; `update <name>` no longer fails on a broken sibling
+pantry (selection happens on the raw list, detection only on the
+selection — the named form's error now always names a pantry the command
+touched; update-all stays fail-closed on first error); the mock git now
+guards `pull --ff-only` argv so dropping the flag would fail the suite;
+`is_normal_relative` deduplicates the two normal-path predicates inside
+pantry.rs; `ManagedPantry`/`managed_pantries` collapsed into
+`resolve_roots`. A flaky unit failure (1-in-6, budget test) exposed a
+test race of the scan-hook kind: pantry unit tests planted a broken
+pantry under a `with_home` temp HOME, and any concurrent test calling
+`search_roots` could observe it and bail — enumeration now goes through
+private path-taking seams (`roots_at`/`statuses_at`/`raw_pantries(home)`)
+and no unit test mutates env HOME for pantries (the env plumbing is
+covered by the per-process integration tests). Rejected: unifying the
+pantry name validator with `run::is_single_component` (the rules differ
+intentionally: single-component-and-dot-ok vs any-length-and-dot-
+forbidden); all efficiency-lane items (quantified below the bar).
+Verified: `cargo test` (115 unit + 36 integration) and `cargo test
+--no-default-features` (100 + 36) green, zero warnings, eight
+consecutive full-suite runs stable; live binary re-checks — doctor
+pantries rows byte-identical, dup-name pantry now renders `error: two
+packages with the name 'same'…` with exit 0, chmod-000 pantry home fails
+doctor with the real error, `start` still resolves from managed pantries
+and names the searched roots.
+
 Exec-plan: `docs/exec-plans/completed/scan-hook-milestone.md`; contract in
 ADR-0004 (`docs/decisions/0004-scan-hook-contract.md`). Fake tree = temp
 HOME; project `lunchbox.toml` in a scratch cwd supplies `scan_command`;
