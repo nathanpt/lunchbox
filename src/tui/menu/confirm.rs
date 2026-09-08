@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::resolve::Locked;
 use crate::run;
-use crate::tui::menu::Action;
+use crate::tui::menu::{chrome, Action};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -80,11 +80,11 @@ pub fn render(state: &mut ConfirmState, frame: &mut Frame, area: Rect) {
         }
         Err(error) => {
             lines.push(Line::from(""));
-            lines.push(Line::from(format!("resolve error: {error}")));
+            lines.push(Line::from(chrome::bad(format!("resolve error: {error}"))));
         }
     }
     lines.push(Line::from(""));
-    lines.push(Line::from("Enter mount · Esc cancel"));
+    lines.push(Line::from(chrome::bold("Enter mount · Esc cancel")));
     frame.render_widget(Paragraph::new(lines), area);
 }
 

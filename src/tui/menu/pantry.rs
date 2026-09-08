@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::library::ListedSkill;
-use crate::tui::menu::Action;
+use crate::tui::menu::{chrome, Action};
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use std::collections::BTreeMap;
@@ -138,38 +138,59 @@ impl PantryState {
 pub fn render(state: &mut PantryState, frame: &mut Frame, area: Rect) {
     let mut lines = Vec::new();
     for (index, section) in state.sections.iter().enumerate() {
-        let cursor = if index == state.section { "▸ " } else { "  " };
+        let marker = if index == state.section { "▸ " } else { "  " };
+        let focused = index == state.section;
         let line = match &section.error {
-            Some(error) => format!("{cursor}{:<28} error: {}", section.label, error),
-            None => format!(
-                "{cursor}{:<28} {}  {} skills",
-                section.label,
-                section.root.display(),
-                section.skills.len()
-            ),
+            Some(error) => Line::from(vec![
+                Span::raw(marker),
+                chrome::bad(format!("{:<28} error: {}", section.label, error)),
+            ]),
+            None => {
+                let text = format!(
+                    "{:<28} {}  {} skills",
+                    section.label,
+                    section.root.display(),
+                    section.skills.len()
+                );
+                if focused {
+                    Line::from(vec![Span::raw(marker), chrome::bold(text)])
+                } else {
+                    Line::from(vec![Span::raw(marker), chrome::dim(text)])
+                }
+            }
         };
-        lines.push(Line::from(line));
+        lines.push(line);
     }
     lines.push(Line::from(""));
     match state.sections.get(state.section) {
-        None => lines.push(Line::from("no skill roots found")),
+        None => lines.push(Line::from(chrome::dim("no skill roots found".to_string()))),
         Some(section) => match &section.error {
-            Some(error) => lines.push(Line::from(format!("error: {error}"))),
+            Some(error) => lines.push(Line::from(chrome::bad(format!("error: {error}")))),
             None => {
                 for (index, skill) in section.skills.iter().enumerate() {
-                    let cursor = if index == state.cursor { "▸ " } else { "  " };
+                    let marker = if index == state.cursor { "▸ " } else { "  " };
                     let check = if state.selected.contains(&skill.name) {
-                        "[x]"
+                        chrome::good("[x]")
                     } else {
-                        "[ ]"
+                        chrome::dim("[ ]")
                     };
-                    lines.push(Line::from(format!(
-                        "{cursor}{check} {:<16} {}",
-                        skill.name, skill.tokens
-                    )));
+                    let body = format!(" {:<16} {}", skill.name, skill.tokens);
+                    if index == state.cursor {
+                        lines.push(Line::from(vec![
+                            Span::raw(marker),
+                            check,
+                            chrome::bold(body),
+                        ]));
+                    } else {
+                        lines.push(Line::from(vec![
+                            Span::raw(marker),
+                            check,
+                            Span::raw(body),
+                        ]));
+                    }
                 }
                 if section.skills.is_empty() {
-                    lines.push(Line::from("no skills in this root"));
+                    lines.push(Line::from(chrome::dim("no skills in this root".to_string())));
                 }
             }
         },

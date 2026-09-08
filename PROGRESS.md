@@ -22,6 +22,29 @@ https://github.com/nathanpt/lunchbox, tagged `v0.3.0` (latest;
 deferred.
 
 
+## Menu milestone — feature-019 (2026-09-08, this machine)
+
+Visual chrome pass + actionable Manifests empty state: new
+`src/tui/menu/chrome.rs` owns the styling conventions (rounded bordered
+block with accent title per screen, dim keybar, live-run status chip —
+green `▶ <run_id> mounted` or dim `no live run` — cursor rows bold,
+selected packs `[x]` green, errors red, meta dim). Screens render into
+`block.inner`; doctor/policy files untouched (their own snapshots
+unchanged). The Manifests empty state now invites creation in place:
+`No manifests found` + dim searched-dirs hint + `n  new manifest here`
+CTA (`n` already worked from the empty list; the footer advertises
+`n new · e edit`).
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 132 unit + 33 cli + 4 menu_pty, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 107 + 33, 0 failed, 0 warnings |
+| Chrome render check | `script -qec 'stty rows 24 cols 80; HOME=<tmp> lunchbox menu'` + emulator frame dump | rounded `╭ Pantry ─…╮` / `╭ Manifests ─…╮` frames; empty state shows the `n new manifest here` CTA |
+| Empty-state creation E2E | `cargo test --test menu_pty editor_roundtrip` | ok — starts from the empty Manifests state, `n` → editor → save → `start --from e2e` mounts |
+
+No new dependencies (ratatui built-ins only, base 16 colors — safe
+under the truecolor-assumed pin in DESIGN §21). Not pushed yet.
+
 ## v0.3.0 distribution verification (2026-09-08, this machine)
 
 `main` + tag `v0.3.0` at `202a930` pushed (packaging commit: version

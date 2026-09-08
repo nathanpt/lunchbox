@@ -181,7 +181,7 @@ fn menu_e2e_editor_roundtrip() {
     expect(&app, "Pantry");
     send(&mut app, "\x1b[B");
     send(&mut app, "\r");
-    expect(&app, "no manifests found");
+    expect(&app, "No manifests found");
     send(&mut app, "n");
     expect(&app, "manifest name:");
     send(&mut app, "e2e\r");

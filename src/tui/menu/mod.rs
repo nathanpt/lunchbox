@@ -4,14 +4,15 @@ use crate::tui::terminal::{self, Restore};
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use std::path::PathBuf;
 
+pub mod chrome;
 pub mod confirm;
-pub mod home;
 pub mod editor;
+pub mod home;
 pub mod manifests;
 pub mod pantry;
 
@@ -270,21 +271,39 @@ impl MenuState {
 }
 
 fn draw_layer(layer: Option<&mut Layer>, frame: &mut Frame, area: Rect) {
+    let title = match layer {
+        Some(Layer::Home(_)) => "lunchbox menu",
+        Some(Layer::Pantry(_)) => "Pantry",
+        Some(Layer::Manifests(_)) => "Manifests",
+        Some(Layer::ManifestDetail(_)) => "Manifest",
+        Some(Layer::Doctor(_)) => "Doctor",
+        Some(Layer::Policy(_)) => "Policy",
+        Some(Layer::Confirm(_)) => "Start run?",
+        Some(Layer::Editor(_)) => "Editor",
+        None => return,
+    };
+    let block = chrome::screen(title);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     match layer {
-        Some(Layer::Home(state)) => home::render(state, frame, area),
-        Some(Layer::Pantry(state)) => pantry::render(state, frame, area),
-        Some(Layer::Manifests(state)) => manifests::render(state, frame, area),
-        Some(Layer::ManifestDetail(state)) => manifests::render_detail(state, frame, area),
-        Some(Layer::Doctor(state)) => crate::tui::doctor::render(state, frame, area),
-        Some(Layer::Policy(state)) => crate::tui::policy::render(state, frame, area),
-        Some(Layer::Confirm(state)) => confirm::render(state, frame, area),
-        Some(Layer::Editor(state)) => editor::render(state, frame, area),
+        Some(Layer::Home(state)) => home::render(state, frame, inner),
+        Some(Layer::Pantry(state)) => pantry::render(state, frame, inner),
+        Some(Layer::Manifests(state)) => manifests::render(state, frame, inner),
+        Some(Layer::ManifestDetail(state)) => manifests::render_detail(state, frame, inner),
+        Some(Layer::Doctor(state)) => crate::tui::doctor::render(state, frame, inner),
+        Some(Layer::Policy(state)) => crate::tui::policy::render(state, frame, inner),
+        Some(Layer::Confirm(state)) => confirm::render(state, frame, inner),
+        Some(Layer::Editor(state)) => editor::render(state, frame, inner),
         None => {}
     }
 }
 
-fn status_line(state: &MenuState) -> String {
-    match state.stack.last() {
+fn status_line(state: &MenuState) -> Line<'static> {
+    let live = match &state.live {
+        Some(run) => chrome::good(format!("▶ {} mounted", run.run_id)),
+        None => chrome::dim("no live run".to_string()),
+    };
+    let text = match state.stack.last() {
         Some(Layer::Policy(policy)) => {
             if policy.input_mode {
                 format!("add entry: {}", policy.input)
@@ -294,14 +313,15 @@ fn status_line(state: &MenuState) -> String {
         }
         Some(Layer::Editor(editor)) => editor.prompt(),
         _ => state.status.clone(),
-    }
+    };
+    Line::from(vec![live, Span::from("  ·  "), Span::from(text)])
 }
 
 fn footer_text(state: &MenuState) -> &'static str {
     match state.stack.last() {
         Some(Layer::Home(_)) => "↑/↓ move · Enter open · Esc back · q quit",
         Some(Layer::Pantry(_)) => "←/→ section · ↑/↓ move · Space toggle · s start · f finish · q quit",
-        Some(Layer::Manifests(_)) => "↑/↓ move · Enter details · f finish · q quit",
+        Some(Layer::Manifests(_)) => "↑/↓ move · Enter details · n new · e edit · f finish · q quit",
         Some(Layer::ManifestDetail(_)) => "Esc back · f finish · q quit",
         Some(Layer::Doctor(_)) => "↑/↓ scroll · Esc back",
         Some(Layer::Policy(_)) => "Tab layer · ←/→ list · a add · Esc back",
@@ -335,7 +355,7 @@ pub fn run(mut state: MenuState) -> Result<()> {
                 height: 1,
                 ..area
             };
-            frame.render_widget(Paragraph::new(Line::from(footer_text(&state))), footer);
+            frame.render_widget(Paragraph::new(chrome::keybar(footer_text(&state))), footer);
         })?;
         let event = terminal::next_event()?;
         if state.dispatch(&event)? {

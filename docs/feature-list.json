@@ -273,6 +273,23 @@
       "dependencies": [
         "feature-017"
       ]
+    },
+    {
+      "id": "feature-019",
+      "category": "functional",
+      "description": "menu visual chrome pass: bordered titled screens, styled cursor/selection and a live-run status chip, and a Manifests empty state that offers creating a manifest in place",
+      "steps": [
+        "every menu screen renders inside one shared chrome — rounded bordered block with a styled title, dim keybar footer, and a status line with a live-run chip (green mounted indicator or dim no-live-run) — applied uniformly across Home/Pantry/Manifests/ManifestDetail/Doctor/Policy/Confirm/Editor",
+        "cursor rows render bold with the ▸ marker, selected pack entries use a green checkbox, and errors render red; the conventions live in one chrome module no screen diverges from",
+        "the Manifests empty state invites creation in place: the searched-dirs hint stays, an 'n new manifest' call-to-action row is visible, and n works from the empty list straight into the editor",
+        "in-process snapshots cover the new chrome; pty E2E passes including creating a manifest from the empty state; cargo test green in both feature configurations"
+      ],
+      "passes": true,
+      "priority": 17,
+      "dependencies": [
+        "feature-017",
+        "feature-018"
+      ]
     }
   ]
 }

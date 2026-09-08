@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::manifests::{DiscoveredManifest, ManifestState};
-use crate::tui::menu::Action;
+use crate::tui::menu::{chrome, Action};
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
@@ -31,27 +31,43 @@ pub struct ManifestDetailState {
 pub fn render(state: &mut ManifestsState, frame: &mut Frame, area: Rect) {
     let mut lines = Vec::new();
     for (index, manifest) in state.manifests.iter().enumerate() {
-        let cursor = if index == state.cursor { "▸ " } else { "  " };
+        let marker = if index == state.cursor { "▸ " } else { "  " };
         let line = match &manifest.state {
             ManifestState::Ok {
                 task,
                 workers,
                 tokens,
-            } => format!(
-                "{cursor}{:<20} {:<24} {} workers  ~{} tokens",
-                manifest.name,
-                task,
-                workers.len(),
-                tokens
-            ),
-            ManifestState::Broken(error) => format!("{cursor}{:<20} error: {}", manifest.name, error),
+            } => {
+                let text = format!(
+                    "{:<20} {:<24} {} workers  ~{} tokens",
+                    manifest.name,
+                    task,
+                    workers.len(),
+                    tokens
+                );
+                if index == state.cursor {
+                    Line::from(vec![Span::raw(marker), chrome::bold(text)])
+                } else {
+                    Line::from(vec![Span::raw(marker), Span::raw(text)])
+                }
+            }
+            ManifestState::Broken(error) => Line::from(vec![
+                Span::raw(marker),
+                chrome::bad(format!("{:<20} error: {}", manifest.name, error)),
+            ]),
         };
-        lines.push(Line::from(line));
+        lines.push(line);
     }
     if state.manifests.is_empty() {
-        lines.push(Line::from(
-            "no manifests found (looked in ./lunchbox/manifests and ~/.lunchbox/manifests)",
-        ));
+        lines.push(Line::from(chrome::bold("No manifests found".to_string())));
+        lines.push(Line::from(chrome::dim(
+            "looked in ./lunchbox/manifests and ~/.lunchbox/manifests".to_string(),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            chrome::good("n".to_string()),
+            Span::raw("  new manifest here"),
+        ]));
     }
     frame.render_widget(Paragraph::new(lines), area);
 }
@@ -94,9 +110,13 @@ pub fn handle_event(state: &mut ManifestsState, event: &Event) -> Action {
 
 pub fn render_detail(state: &mut ManifestDetailState, frame: &mut Frame, area: Rect) {
     let manifest = &state.manifest;
+    let label = |text: &str| chrome::dim(format!("{text:<15} "));
     let mut lines = vec![
-        Line::from(format!("manifest       {}", manifest.name)),
-        Line::from(format!("path           {}", manifest.path.display())),
+        Line::from(vec![label("manifest"), Span::raw(manifest.name.clone())]),
+        Line::from(vec![
+            label("path"),
+            Span::raw(manifest.path.display().to_string()),
+        ]),
     ];
     match &manifest.state {
         ManifestState::Ok {
@@ -104,19 +124,22 @@ pub fn render_detail(state: &mut ManifestDetailState, frame: &mut Frame, area: R
             workers,
             tokens,
         } => {
-            lines.push(Line::from(format!("task           {task}")));
-            lines.push(Line::from(format!("menu_tokens    ~{tokens}")));
+            lines.push(Line::from(vec![label("task"), Span::raw(task.clone())]));
+            lines.push(Line::from(vec![
+                label("menu_tokens"),
+                Span::raw(format!("~{tokens}")),
+            ]));
             lines.push(Line::from(""));
             for (name, pack) in workers {
-                lines.push(Line::from(format!("worker         {name}")));
+                lines.push(Line::from(chrome::bold(format!("worker {name}"))));
                 for pin in pack {
-                    lines.push(Line::from(format!("  - {pin}")));
+                    lines.push(Line::from(chrome::dim(format!("  - {pin}"))));
                 }
             }
         }
         ManifestState::Broken(error) => {
             lines.push(Line::from(""));
-            lines.push(Line::from(format!("error: {error}")));
+            lines.push(Line::from(chrome::bad(format!("error: {error}"))));
         }
     }
     frame.render_widget(Paragraph::new(lines), area);

@@ -1,7 +1,7 @@
-use crate::tui::menu::Action;
+use crate::tui::menu::{chrome, Action};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
@@ -32,10 +32,15 @@ impl Route {
 pub const ROWS: [Route; 4] = [Route::Pantry, Route::Manifests, Route::Doctor, Route::Policy];
 
 pub fn render(state: &mut HomeState, frame: &mut Frame, area: Rect) {
-    let mut lines = vec![Line::from("lunchbox menu"), Line::from("")];
+    let mut lines = Vec::new();
     for (index, route) in ROWS.iter().enumerate() {
-        let cursor = if index == state.cursor { "▸ " } else { "  " };
-        lines.push(Line::from(format!("{cursor}{}", route.label())));
+        let marker = if index == state.cursor { "▸ " } else { "  " };
+        let label = route.label().to_string();
+        if index == state.cursor {
+            lines.push(Line::from(vec![Span::raw(marker), chrome::bold(label)]));
+        } else {
+            lines.push(Line::from(vec![Span::raw(marker), Span::raw(label)]));
+        }
     }
     frame.render_widget(Paragraph::new(lines), area);
 }

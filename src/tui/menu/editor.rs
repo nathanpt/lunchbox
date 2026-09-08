@@ -1,10 +1,10 @@
 use crate::config::Config;
 use crate::library::ListedSkill;
-use crate::tui::menu::Action;
+use crate::tui::menu::{chrome, Action};
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use std::collections::BTreeMap;
@@ -441,79 +441,92 @@ fn resolve_hashes(
 }
 
 pub fn render(state: &mut EditorState, frame: &mut Frame, area: Rect) {
+    let label = |text: &str| chrome::dim(format!("{text:<15} "));
     let mut lines = Vec::new();
     match &state.path {
-        Some(path) => lines.push(Line::from(format!("manifest       {}", path.display()))),
-        None => lines.push(Line::from(format!(
-            "manifest       {} → {}/{}.toml",
-            state.save_target.label(),
-            state.name,
-            state.name
-        ))),
+        Some(path) => lines.push(Line::from(vec![
+            label("manifest"),
+            chrome::dim(path.display().to_string()),
+        ])),
+        None => lines.push(Line::from(vec![
+            label("manifest"),
+            chrome::dim(format!(
+                "{} → {}/{}.toml",
+                state.save_target.label(),
+                state.name,
+                state.name
+            )),
+        ])),
     };
-    lines.push(Line::from(format!("task           {}", state.task)));
-    lines.push(Line::from(format!("adapter        {}", state.adapter)));
-    lines.push(Line::from(match state.budget {
-        Some(budget) => format!("budget         {budget}"),
-        None => "budget         (none)".to_string(),
-    }));
-    lines.push(Line::from(format!(
-        "pin hashes     {}",
-        if state.pin_hashes { "on" } else { "off" }
-    )));
+    lines.push(Line::from(vec![label("task"), Span::raw(state.task.clone())]));
+    lines.push(Line::from(vec![
+        label("adapter"),
+        Span::raw(state.adapter.clone()),
+    ]));
+    lines.push(Line::from(vec![
+        label("budget"),
+        Span::raw(match state.budget {
+            Some(budget) => budget.to_string(),
+            None => "(none)".to_string(),
+        }),
+    ]));
+    lines.push(Line::from(vec![
+        label("pin hashes"),
+        Span::raw(if state.pin_hashes { "on" } else { "off" }.to_string()),
+    ]));
 
     lines.push(Line::from(""));
-    let workers_marker = if state.focus == Focus::Workers {
-        " ▸"
-    } else {
-        ""
-    };
-    lines.push(Line::from(format!("workers{workers_marker}")));
+    let workers_focused = state.focus == Focus::Workers;
+    lines.push(Line::from(chrome::bold(format!(
+        "workers{}",
+        if workers_focused { " ▸" } else { "" }
+    ))));
     for (index, worker) in state.workers.iter().enumerate() {
-        let cursor = if index == state.worker_cursor && state.focus == Focus::Workers {
-            "▸ "
-        } else {
-            "  "
-        };
+        let cursor_here = index == state.worker_cursor && workers_focused;
+        let marker = if cursor_here { "▸ " } else { "  " };
+        let body = format!("{:<16}", worker.name);
         let pack = if worker.pack.is_empty() {
-            "(empty)".to_string()
+            chrome::dim("pack: (empty)".to_string())
         } else {
-            worker.pack.join(", ")
+            Span::raw(format!("pack: {}", worker.pack.join(", ")))
         };
-        lines.push(Line::from(format!(
-            "{cursor}{:<16} pack: {}",
-            worker.name, pack
-        )));
+        if cursor_here {
+            lines.push(Line::from(vec![Span::raw(marker), chrome::bold(body), Span::raw(" "), pack]));
+        } else {
+            lines.push(Line::from(vec![Span::raw(marker), Span::raw(body), Span::raw(" "), pack]));
+        }
     }
     if state.workers.is_empty() {
-        lines.push(Line::from("  (no workers)"));
+        lines.push(Line::from(chrome::dim("  (no workers)".to_string())));
     }
 
     lines.push(Line::from(""));
-    let skills_marker = if state.focus == Focus::Skills {
-        " ▸"
-    } else {
-        ""
-    };
-    lines.push(Line::from(format!("skills{skills_marker}")));
+    let skills_focused = state.focus == Focus::Skills;
+    lines.push(Line::from(chrome::bold(format!(
+        "skills{}",
+        if skills_focused { " ▸" } else { "" }
+    ))));
     for (index, skill) in state.skills.iter().enumerate() {
-        let cursor = if index == state.skill_cursor && state.focus == Focus::Skills {
-            "▸ "
-        } else {
-            "  "
-        };
+        let cursor_here = index == state.skill_cursor && skills_focused;
+        let marker = if cursor_here { "▸ " } else { "  " };
         let in_pack = state
             .workers
             .get(state.worker_cursor)
             .is_some_and(|worker| worker.pack.contains(&skill.name));
-        let check = if in_pack { "[x]" } else { "[ ]" };
-        lines.push(Line::from(format!(
-            "{cursor}{check} {:<16} {}",
-            skill.name, skill.tokens
-        )));
+        let check = if in_pack {
+            chrome::good("[x]")
+        } else {
+            chrome::dim("[ ]")
+        };
+        let body = format!(" {:<16} {}", skill.name, skill.tokens);
+        if cursor_here {
+            lines.push(Line::from(vec![Span::raw(marker), check, chrome::bold(body)]));
+        } else {
+            lines.push(Line::from(vec![Span::raw(marker), check, Span::raw(body)]));
+        }
     }
     if state.skills.is_empty() {
-        lines.push(Line::from("  (no skills discovered)"));
+        lines.push(Line::from(chrome::dim("  (no skills discovered)".to_string())));
     }
     frame.render_widget(Paragraph::new(lines), area);
 }
