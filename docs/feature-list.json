@@ -307,6 +307,22 @@
       "dependencies": [
         "feature-019"
       ]
+    },
+    {
+      "id": "feature-021",
+      "category": "functional",
+      "description": "calibrated Stage A token budget: estimates match what the harness actually renders (pi probe), preamble priced once per menu, no tokenizer dependency (ADR-0008)",
+      "steps": [
+        "per-skill estimate adds the probe-derived listing overhead (204 chars: XML scaffolding plus mount-path allowance) on top of name and description",
+        "every menu total adds the 74-token preamble exactly once and only for non-empty menus, across start, why, doctor, per-worker budgets, the confirm screen, and the editor live total",
+        "ADR-0008 records the pi probe, the omp Path B divergence, and the tokenizer rejection rationale; DESIGN §12 states the calibrated formula",
+        "all token fixtures updated; cargo test green in both feature configurations; manual smoke shows menu_tokens 203 for the two-skill demo union"
+      ],
+      "passes": true,
+      "priority": 19,
+      "dependencies": [
+        "feature-017"
+      ]
     }
   ]
 }

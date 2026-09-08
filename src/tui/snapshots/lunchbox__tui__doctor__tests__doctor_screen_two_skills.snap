@@ -6,7 +6,7 @@ lunchbox doctor — pi [0.84.4]
 git [2.99.0]
 /home/w/.agents/skills  2 skills
 
-menu_tokens  27  (2 skills union)
+menu_tokens  203  (2 skills union)
 * demo-review      14
 * demo-scan        13
 

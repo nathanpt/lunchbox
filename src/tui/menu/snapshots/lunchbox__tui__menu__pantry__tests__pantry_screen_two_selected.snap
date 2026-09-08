@@ -5,7 +5,7 @@ expression: "frame_to_string(frame.buffer, frame.area)"
 ▸ --library                    /home/user/demo/.agents/skills  2 skills
   default                      /home/user/demo/project/.agents/skills  0 skills
 
-  [x] demo-review      14
-▸ [x] demo-scan        13
+  [x] demo-review      65
+▸ [x] demo-scan        64
 
 demo-scan  Scan for leaked secrets in the worktree.

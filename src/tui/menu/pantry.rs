@@ -349,12 +349,12 @@ mod tests {
                     skills: vec![
                         ListedSkill {
                             name: "demo-review".to_string(),
-                            tokens: 14,
+                            tokens: 65,
                             description: "Review staged changes for defects and risks.".to_string(),
                         },
                         ListedSkill {
                             name: "demo-scan".to_string(),
-                            tokens: 13,
+                            tokens: 64,
                             description: "Scan for leaked secrets in the worktree.".to_string(),
                         },
                     ],

@@ -153,7 +153,7 @@ mod tests {
                 skills: skills.clone(),
             }],
             pantries: Vec::new(),
-            menu_tokens: 27,
+            menu_tokens: 203,
             union: skills,
         }
     }
@@ -171,7 +171,7 @@ mod tests {
     fn displayed_tokens_equal_doctor_json() {
         let state = DoctorState::new(two_skill_report());
         let twin = state.report.to_json();
-        assert_eq!(twin["menu_tokens"], json!(27));
+        assert_eq!(twin["menu_tokens"], json!(203));
         assert_eq!(twin["fattest"][0]["name"], json!("demo-review"));
         assert_eq!(twin["fattest"][0]["tokens"], json!(14));
         assert_eq!(twin["skill_dirs"][0]["skills"], json!(2));

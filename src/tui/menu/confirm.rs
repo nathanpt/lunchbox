@@ -72,7 +72,9 @@ pub fn render(state: &mut ConfirmState, frame: &mut Frame, area: Rect) {
                     skill.name, skill.hash
                 )));
             }
-            let tokens: u64 = locked.iter().map(|skill| skill.description_tokens).sum();
+            let tokens: u64 = crate::tokens::with_preamble(
+                locked.iter().map(|skill| skill.description_tokens).sum(),
+            );
             lines.push(Line::from(format!(
                 "menu_tokens    this run: {tokens}"
             )));

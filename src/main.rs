@@ -593,7 +593,8 @@ fn cmd_why(run_id: Option<&str>, json: bool) -> Result<ExitCode> {
     let manifest: Manifest = run::read_manifest(&run_dir)?;
     let lock = run::read_lock(&run_dir)?;
     let result = run::read_result(&run_dir)?;
-    let menu_tokens: u64 = lock.skills.iter().map(|s| s.description_tokens).sum();
+    let menu_tokens: u64 =
+        crate::tokens::with_preamble(lock.skills.iter().map(|s| s.description_tokens).sum());
     let adapter = adapter::resolve_adapter(&manifest.adapter)?;
     let (without_tokens, _) = adapter::union_menu(adapter.as_ref(), &cfg);
     let unmounted = !run_dir.join("workdir").exists() && result.is_some();

@@ -54,11 +54,13 @@ impl Worker {
     }
 
     pub fn menu_tokens(&self, locked: &[crate::resolve::Locked]) -> u64 {
-        self.pack
-            .iter()
-            .filter_map(|name| locked.iter().find(|l| &l.name == name))
-            .map(|l| l.description_tokens)
-            .sum()
+        crate::tokens::with_preamble(
+            self.pack
+                .iter()
+                .filter_map(|name| locked.iter().find(|l| &l.name == name))
+                .map(|l| l.description_tokens)
+                .sum(),
+        )
     }
 }
 
@@ -405,7 +407,8 @@ fn mount_run(
     write_lock(run_dir, &lock)?;
     let adapter = crate::adapter::resolve_adapter(adapter_name)?;
     let (without_tokens, without_skills) = crate::adapter::union_menu(adapter.as_ref(), cfg);
-    let menu_tokens: u64 = locked.iter().map(|s| s.description_tokens).sum();
+    let menu_tokens: u64 =
+        crate::tokens::with_preamble(locked.iter().map(|s| s.description_tokens).sum());
     append_audit(
         run_dir,
         run_id,
@@ -651,7 +654,9 @@ pub fn teardown(run_dir: &Path, outcome: Outcome, cfg: &crate::config::Config) -
     )?;
     let menu_tokens = lock
         .as_ref()
-        .map(|l| l.skills.iter().map(|s| s.description_tokens).sum())
+        .map(|l| {
+            crate::tokens::with_preamble(l.skills.iter().map(|s| s.description_tokens).sum())
+        })
         .unwrap_or(0);
     let without_menu_tokens = manifest
         .as_ref()
@@ -814,7 +819,7 @@ mod tests {
         assert!(!workdir.exists());
         let result = read_result(&run_dir).unwrap().unwrap();
         assert_eq!(result.outcome, "ok");
-        assert_eq!(result.menu_tokens, 27);
+        assert_eq!(result.menu_tokens, 101);
         assert!(result.unmounted);
         assert_eq!(result.skills.len(), 2);
         let audit = fs::read_to_string(run_dir.join("audit.jsonl")).unwrap();

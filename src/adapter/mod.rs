@@ -133,7 +133,7 @@ pub fn union_from(reports: &[DirReport]) -> (u64, Vec<FoundDirSkill>) {
             });
         }
     }
-    let total = by_name.values().map(|s| s.tokens).sum();
+    let total = crate::tokens::with_preamble(by_name.values().map(|s| s.tokens).sum());
     (total, by_name.into_values().collect())
 }
 
@@ -455,8 +455,10 @@ mod tests {
         assert_eq!(names, vec!["extra", "shared"]);
         assert_eq!(
             total,
-            crate::tokens::estimate("shared", "Same skill in both dirs")
-                + crate::tokens::estimate("extra", "Only in project")
+            crate::tokens::with_preamble(
+                crate::tokens::estimate("shared", "Same skill in both dirs")
+                    + crate::tokens::estimate("extra", "Only in project")
+            )
         );
     }
 }

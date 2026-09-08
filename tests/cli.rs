@@ -139,7 +139,7 @@ fn feature_001_mount_unmount_loop() {
         .current_dir(scratch().path())
         .assert()
         .success()
-        .stdout(predicates::str::contains("menu_tokens    this run: 27"));
+        .stdout(predicates::str::contains("menu_tokens    this run: 203"));
 
     let run = only_run(home.path());
     let workdir = run.join("workdir");
@@ -162,7 +162,7 @@ fn feature_001_mount_unmount_loop() {
         .unwrap();
     assert_eq!(result["unmounted"], serde_json::json!(true));
     assert_eq!(result["outcome"], serde_json::json!("ok"));
-    assert_eq!(result["menu_tokens"], serde_json::json!(27));
+    assert_eq!(result["menu_tokens"], serde_json::json!(203));
 
     lbx()
         .args(["finish"])
@@ -257,11 +257,11 @@ fn feature_002_doctor_reports_tree_without_mounting() {
         .expect("home skills dir reported");
     assert_eq!(home_dir["skills"], serde_json::json!(2));
     assert_eq!(home_dir["exists"], serde_json::json!(true));
-    assert_eq!(report["menu_tokens"], serde_json::json!(27));
+    assert_eq!(report["menu_tokens"], serde_json::json!(203));
     let fattest = report["fattest"].as_array().unwrap();
     assert_eq!(fattest[0]["name"], serde_json::json!("demo-review"));
-    assert_eq!(fattest[0]["tokens"], serde_json::json!(14));
-    assert_eq!(fattest[1]["tokens"], serde_json::json!(13));
+    assert_eq!(fattest[0]["tokens"], serde_json::json!(65));
+    assert_eq!(fattest[1]["tokens"], serde_json::json!(64));
     assert!(
         !runs_dir(home.path()).exists(),
         "doctor must not create run dirs"
@@ -293,14 +293,14 @@ fn start_json_reports_numbers() {
         .stdout
         .clone();
     let report: Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(report["menu_tokens"], serde_json::json!(27));
+    assert_eq!(report["menu_tokens"], serde_json::json!(203));
     assert_eq!(report["without_menu_tokens"], serde_json::json!(0));
     assert_eq!(report["adapter"], serde_json::json!("none"));
     assert_eq!(report["mount_mode"], serde_json::json!("symlink"));
     assert_eq!(report["skills"].as_array().unwrap().len(), 2);
     assert_eq!(
         report["workers"],
-        serde_json::json!([{"name": "default", "menu_tokens": 27}])
+        serde_json::json!([{"name": "default", "menu_tokens": 203}])
     );
 }
 
@@ -602,8 +602,8 @@ fn from_manifest_mounts_per_worker_packs() {
     assert_eq!(
         report["workers"],
         serde_json::json!([
-            {"name": "parent", "menu_tokens": 14},
-            {"name": "reviewer", "menu_tokens": 13},
+            {"name": "parent", "menu_tokens": 139},
+            {"name": "reviewer", "menu_tokens": 138},
         ])
     );
     let run = only_run(home.path());
@@ -1370,7 +1370,7 @@ fn why_reports_five_line_recap() {
     assert_eq!(lines.len(), 5, "{text}");
     assert!(lines[0].contains("task \"review PR 412\""), "{text}");
     assert!(lines[1].contains("demo-review, demo-scan"), "{text}");
-    assert!(lines[2].contains("this run 27"), "{text}");
+    assert!(lines[2].contains("this run 203"), "{text}");
     assert!(lines[3].contains("unmounted yes"), "{text}");
     assert!(lines[4].contains("outcome   ok"), "{text}");
 }
@@ -1393,7 +1393,7 @@ fn doctor_human_output_on_fake_tree() {
         .assert()
         .success()
         .stdout(predicates::str::contains("adapter        pi"))
-        .stdout(predicates::str::contains("menu_tokens    14"))
+        .stdout(predicates::str::contains("menu_tokens    139"))
         .stdout(predicates::str::contains("demo-review"))
         .stdout(predicates::str::contains("duplicates     none"));
 }

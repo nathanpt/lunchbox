@@ -21,6 +21,30 @@ https://github.com/nathanpt/lunchbox, tagged `v0.3.0` (latest;
 `v0.1.0`/`v0.2.0` earlier); crates.io and prebuilt Release binaries
 deferred.
 
+## Menu milestone — feature-021 (2026-09-08, this machine)
+
+Calibrated Stage A token budget (ADR-0008). Probed the installed pi
+0.84.4 bundle: skills are listed as `<name>`/`<description>` XML plus
+the full mount `<location>` path under one `<available_skills>`
+preamble — whole frontmatter is never loaded (pi keeps only
+`{name, description}`), while path + markup are always paid. The
+estimator now prices that reality: per skill
+`ceil((chars(name)+1+chars(description)+204)/4)` (204 = 99 XML + 105
+path allowance) and +74 tokens once per non-empty menu
+(`tokens::with_preamble`), applied at start, why, doctor,
+per-worker budgets, the confirm screen, and the editor live total.
+Tokenizer dependency rejected (ADR-0008): vocab-sized, and the worker
+model varies per harness. Omp Path B carries no skill text in its
+prompt, so estimates are an upper bound there — documented.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 138 unit + 33 cli + 4 menu_pty, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 108 + 33, 0 failed, 0 warnings |
+| Calibrated smoke | `HOME=<tmp with both demo skills> lunchbox start --skill demo-review --skill demo-scan --adapter none` | `menu_tokens    this run: 203` (was 27); finish cleans |
+| Doctor total | `lunchbox doctor --json` | `menu_tokens: 203` |
+| Budget gate | `cargo test --bin lunchbox budget_hard_fail` | ok — `menu_tokens 139 exceeds max_menu_tokens 10` |
+
 ## Menu milestone — feature-020 (2026-09-08, this machine)
 
 Feedback pass over the menu: (1) `f` inside editor inputs now types —

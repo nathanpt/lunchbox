@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(locked.len(), 1);
         assert_eq!(locked[0].name, "demo-review");
         assert!(locked[0].hash.starts_with("sha256:"));
-        assert_eq!(locked[0].description_tokens, 14);
+        assert_eq!(locked[0].description_tokens, 65);
     }
 
     #[test]
@@ -486,7 +486,7 @@ mod tests {
             .to_string();
         assert_eq!(
             err,
-            "worker 'default': menu_tokens 14 exceeds max_menu_tokens 10 (fail_on_budget = true)"
+            "worker 'default': menu_tokens 139 exceeds max_menu_tokens 10 (fail_on_budget = true)"
         );
     }
 
@@ -516,19 +516,18 @@ mod tests {
         .unwrap();
         let cfg = config_with_root(&dir.path().to_path_buf());
         let locked = resolve(&pins(&["alpha", "beta"]), &cfg, &[], false).unwrap();
-        let split: Vec<u64> = locked.iter().map(|l| l.description_tokens).collect();
-        let cap = split.iter().max().unwrap();
         let workers = vec![
             crate::run::Worker { name: "a".to_string(), pack: pins(&["alpha"]), description: None },
             crate::run::Worker { name: "b".to_string(), pack: pins(&["beta"]), description: None },
         ];
-        assert!(enforce_worker_budget(&workers, &locked, *cap, true).is_ok());
+        let cap = workers.iter().map(|w| w.menu_tokens(&locked)).max().unwrap();
+        assert!(enforce_worker_budget(&workers, &locked, cap, true).is_ok());
         let union_only = vec![crate::run::Worker {
             name: "u".to_string(),
             pack: pins(&["alpha", "beta"]),
             description: None,
         }];
-        assert!(enforce_worker_budget(&union_only, &locked, *cap, true).is_err());
+        assert!(enforce_worker_budget(&union_only, &locked, cap, true).is_err());
     }
 
     #[test]

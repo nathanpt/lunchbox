@@ -353,18 +353,29 @@ exactly that worker's skills.
 
 Do **not** paste Skill bodies into prompts.
 
-- **Stage A (menu):** name + description from frontmatter only. This is what should enter the worker’s system prompt via the harness’s normal skill discovery.
+- **Stage A (menu):** the harness lists each skill as name +
+  description (+ mount path, in pi's rendering) — never other
+  frontmatter keys, never skill bodies. This is what enters the
+  worker's system prompt via the harness's normal skill discovery.
 - **Stage B:** harness reads full `SKILL.md` on invoke.
 - **Stage C:** scripts/references on demand.
 
-`menu_tokens` is an estimate of Stage A for a given menu:
+`menu_tokens` is an estimate of Stage A for a given menu, calibrated
+against the installed harness (ADR-0008, probed against pi 0.84.4 on
+2026-09-08): the harness lists each skill as name + description plus a
+path and listing markup, so
 
 ```
-estimate = sum(over skills in menu) tokens(name + description)
+per skill = ceil((chars(name) + 1 + chars(description) + 204) / 4)
+menu      = sum(per skill) + 74 preamble (once; 0 for an empty menu)
 ```
 
-Use a simple estimator in v1: `ceil(chars/4)` on `name + "\n" + description`. Document that it is approximate. Also compute `without_lunchbox` by scanning the adapter’s usual global+project skill dirs (same estimator). Print both on `start` and `doctor`.
-
+It stays an estimate: real tokenization varies by model, and harnesses
+render differently. No tokenizer dependency — the vocabulary would be
+both heavy and wrong for whichever model the worker actually runs.
+Also compute `without_lunchbox` by scanning the adapter's usual
+global+project skill dirs (same estimator). Print both on `start` and
+`doctor`.
 Never dump pack text into a subagent system prompt. That double-pays and bypasses Stage A.
 
 ---

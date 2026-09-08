@@ -190,15 +190,17 @@ impl EditorState {
                 }
             }
         }
-        names
-            .iter()
-            .filter_map(|name| {
-                self.skills
-                    .iter()
-                    .find(|skill| skill.name == *name)
-                    .map(|skill| skill.tokens)
-            })
-            .sum()
+        crate::tokens::with_preamble(
+            names
+                .iter()
+                .filter_map(|name| {
+                    self.skills
+                        .iter()
+                        .find(|skill| skill.name == *name)
+                        .map(|skill| skill.tokens)
+                })
+                .sum(),
+        )
     }
 
     pub fn build_input(&self) -> crate::run::ManifestInput {
@@ -810,13 +812,13 @@ mod tests {
             let mut state = named_draft(&cfg, &libraries, "e2e");
             assert_eq!(state.live_tokens(), 0);
             handle_event(&mut state, &press(KeyCode::Char(' ')));
-            assert_eq!(state.live_tokens(), 14, "union updates on first toggle");
+            assert_eq!(state.live_tokens(), 139, "union updates on first toggle");
             handle_event(&mut state, &press(KeyCode::Down));
             handle_event(&mut state, &press(KeyCode::Char(' ')));
-            assert_eq!(state.live_tokens(), 27);
+            assert_eq!(state.live_tokens(), 203);
             handle_event(&mut state, &press(KeyCode::Char(' ')));
             assert_eq!(
-                state.live_tokens(), 14,
+                state.live_tokens(), 139,
                 "toggling off removes the cost again"
             );
             handle_event(&mut state, &press(KeyCode::Char(' ')));
@@ -825,9 +827,9 @@ mod tests {
                 .draw(|frame| render(&mut state, frame, frame.area()))
                 .unwrap();
             let rendered = crate::tui::snap::frame_to_string(frame.buffer, frame.area);
-            assert!(rendered.contains("this run: 27"), "{rendered}");
-            assert!(rendered.contains("demo-review (14)"), "{rendered}");
-            assert!(rendered.contains("demo-scan (13)"), "{rendered}");
+            assert!(rendered.contains("this run: 203"), "{rendered}");
+            assert!(rendered.contains("demo-review (65)"), "{rendered}");
+            assert!(rendered.contains("demo-scan (64)"), "{rendered}");
             assert!(
                 rendered.contains("Scan for leaked secrets in the worktree."),
                 "focused skill description must be visible: {rendered}"

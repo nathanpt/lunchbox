@@ -114,7 +114,7 @@ fn menu_e2e_start_flow() {
     send(&mut app, " ");
     send(&mut app, "s");
     expect(&app, "sha256:");
-    expect(&app, "menu_tokens    this run: 27");
+    expect(&app, "menu_tokens    this run: 203");
     send(&mut app, "\r");
     expect(&app, "mounted");
     expect(&app, "lbx_");
@@ -217,7 +217,7 @@ fn menu_e2e_editor_roundtrip() {
         .current_dir(cwd.path())
         .assert()
         .success()
-        .stdout(predicates::str::contains("menu_tokens    this run: 27"));
+        .stdout(predicates::str::contains("menu_tokens    this run: 203"));
     Command::cargo_bin("lunchbox")
         .unwrap()
         .arg("finish")
