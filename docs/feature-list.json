@@ -219,7 +219,7 @@
         "It is a valid pantry member: start --library skills --skill lunchbox --adapter none mounts exactly it from a clone and finish unmounts",
         "It is acquirable: lunchbox add <this repository's url> auto-detects the skills/ subdirectory as the pantry root, and start --skill lunchbox resolves with no --library"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 13,
       "dependencies": [
         "feature-014"

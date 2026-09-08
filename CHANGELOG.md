@@ -6,6 +6,17 @@ edits that a user would not notice do not belong here.
 
 ## [Unreleased]
 
+### Added (driver skill)
+
+- 2026-09-08 — Feature-015 passed. `skills/lunchbox/SKILL.md`: a driver
+  Skill that teaches a mounted agent the lunchbox loop — `doctor` for
+  the standing cost, `start` with explicit pins (the worker sees only
+  the mount), `finish` always, fail-closed on errors. The repository is
+  itself a pantry: `lunchbox add
+  https://github.com/nathanpt/lunchbox` auto-detects `skills/`, and the
+  driver Skill resolves with no `--library`. DESIGN §22 "Next (v1.x)"
+  is now complete.
+
 ## [0.2.0] - 2026-09-08
 
 ### Added (packaging)

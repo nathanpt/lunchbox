@@ -1,26 +1,52 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-08 (pantry milestone)
+Last updated: 2026-09-08 (driver skill)
 
 ## Current repository state
 
-v1 + Path B + scan hook + pantry milestone complete. Phase 1 + TUI
+v1 + Path B + scan hook + pantry + driver Skill complete. Phase 1 + TUI
 milestone + two simplify passes + the README/Omp milestone + the Path B
 milestone + the scan-hook milestone + the pantry (thin git installer)
-milestone: core CLI, Pi and Omp Path A adapters, the four v1 TUI screens
-behind cargo features, the DESIGN §25 README, `--from manifest.toml`
-multi-worker runs with run-local agent files, the `scan_command` policy
-gate with `--override-scan` (ADR-0004), and `lunchbox add` / `update`
-acquiring whole skill repos into `~/.lunchbox/pantry` (ADR-0006 — the
-2026-09-08 pivot that narrowed the "not a skill manager" posture to
-per-skill management). 114 unit + 36 integration tests green in the
-default configuration, 99 + 36 with `--no-default-features`, zero
-warnings in both. **Features 001–014 all pass.** Branch `main`; tree
-clean after each phase commit.
+milestone + the driver Skill: core CLI, Pi and Omp Path A adapters, the
+four v1 TUI screens behind cargo features, the DESIGN §25 README,
+`--from manifest.toml` multi-worker runs with run-local agent files, the
+`scan_command` policy gate with `--override-scan` (ADR-0004), `lunchbox
+add` / `update` acquiring whole skill repos into `~/.lunchbox/pantry`
+(ADR-0006 — the 2026-09-08 pivot that narrowed the "not a skill manager"
+posture to per-skill management), and the `skills/lunchbox/` driver
+Skill closing out DESIGN §22 "Next". 115 unit + 36 integration tests
+green in the default configuration, 100 + 36 with
+`--no-default-features`, zero warnings in both. **Features 001–015 all
+pass.** Branch `main`; tree clean after each phase commit.
 
 Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
 prebuilt Release binaries deferred.
+
+
+## Driver skill verification (2026-09-08, this machine)
+
+Content-only feature (feature-015): `skills/lunchbox/SKILL.md` — a
+driver Skill that teaches a mounted agent the lunchbox run loop (doctor,
+start with explicit pins, worker sees only the mount, finish always) —
+plus one README sentence in "Adding skills". No CLI code changed;
+binary `target/debug/lunchbox`; fresh `$HOME` per block.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 115 unit + 36 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 100 + 36 integration, 0 failed, 0 warnings |
+| Valid pantry member | `HOME=<fake> lunchbox start --library skills --skill lunchbox --adapter none` → `finish` | exit 0; `skills lunchbox@sha256:768ab0fa…`; `menu_tokens this run: 27`; workdir exposes exactly the `lunchbox` package (symlink mount, `SKILL.md` only); result.json `unmounted: true`; workdir gone |
+| Acquirable (live) | `HOME=<fake> lunchbox add https://github.com/nathanpt/lunchbox` | `added lunchbox`; pantry root `…/.lunchbox/pantry/lunchbox/skills` (`skills/` auto-detected); `skills 1` |
+| Resolve without `--library` | `lunchbox doctor` / `start --skill lunchbox --adapter none` / `update` | doctor lists `lunchbox …/pantry/lunchbox/skills 1 skills`; start mounts the managed copy (same sha256, `menu_tokens this run: 27`), `finish` cleans; `update` → `updated lunchbox` |
+| Manual pi walkthrough (optional) | `start --library skills --skill lunchbox --adapter pi --wait -- pi -p …` | **skipped** — fresh `$HOME` hides the API key (`No API key found for the selected model`); mount itself sealed correctly (`path A flags applied`, `without 0`) |
+
+Deviations: one, sequencing only — the live `add` check needs the
+content commit on `origin/main` (the remote has no `skills/` before
+it), so the order was commit (`7ce611b`) → push → live checks → flip +
+this record, matching the package-then-record convention; content and
+expectations unchanged (menu_tokens recomputed from the committed file:
+the plan's `26`-vs-`27` addendum resolved to 27 in the binary output).
 
 ## v0.2.0 distribution verification (2026-09-08, this machine)
 
@@ -478,7 +504,7 @@ None in flight.
 
 ## Next useful move
 
-`skills/lunchbox/` driver Skill (DESIGN §22 "Next", the last v1 item): a
-Skill that drives lunchbox itself so an agent can mount its own sealed
-run. Both adapters' Path B is print mode until a harness grows a
-per-invocation agent-dir override (ADR-0003 records the flip condition).
+Nothing in flight — DESIGN §22 "Next (v1.x)" is exhausted (features
+001–015 all pass). Candidates from §22 "Later": Claude/Codex adapters
+with honest "cannot isolate" mode, `qvr.lock` ingest, Kitter library
+path autodetect, Windows junctions, real sandbox for scripts.

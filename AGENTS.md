@@ -11,15 +11,15 @@ sees only the locked Skills for that job. `docs/design-docs/DESIGN.md` is
 the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
-- Current phase: v1 + Path B + scan hook + pantry milestone complete
-  (features 001–014 all passing), distributed as `v0.2.0` (latest tag;
-  `v0.1.0` first) — MIT, git-only install per ADR-0005
+- Current phase: v1 + Path B + scan hook + pantry + driver Skill
+  complete (features 001–015 all passing), distributed as `v0.2.0`
+  (latest tag; `v0.1.0` first) — MIT, git-only install per ADR-0005
   Pi + Omp Path A adapters, the four TUI screens, the README (DESIGN
   §22/§25), `--from` multi-worker runs with run-local agent files (DESIGN
   §14 print mode, ADR-0003), the `scan_command` policy gate with
-  `--override-scan` (ADR-0004), and thin git acquisition — `add` /
-  `update` into `~/.lunchbox/pantry` (ADR-0006). Next:
-  `skills/lunchbox/` driver Skill (DESIGN §22 "Next").
+  `--override-scan` (ADR-0004), thin git acquisition — `add` / `update`
+  into `~/.lunchbox/pantry` (ADR-0006) — and the `skills/lunchbox/`
+  driver Skill, closing out DESIGN §22 "Next (v1.x)".
 - Language/runtime: Rust, unconditional —
   `docs/decisions/0001-rust-unconditional.md` (ADR-0001).
 
