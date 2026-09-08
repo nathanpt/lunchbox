@@ -6,6 +6,15 @@ edits that a user would not notice do not belong here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-08
+
+### Added (packaging)
+
+- 2026-09-08 — v0.2.0 tagged and pushed at
+  https://github.com/nathanpt/lunchbox (`cargo install --locked --git
+  … --tag v0.2.0`; the tagless form installs the default-branch tip).
+  crates.io and prebuilt binaries stay deferred per ADR-0005.
+
 ### Added (pantry milestone)
 
 - 2026-09-08 — Feature-014 passed (ADR-0006). `lunchbox add <git-url>`

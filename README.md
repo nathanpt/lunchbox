@@ -18,7 +18,7 @@ From the repository (no account, no server, no background indexer — one
 static binary):
 
 ```sh
-cargo install --locked --git https://github.com/nathanpt/lunchbox --tag v0.1.0
+cargo install --locked --git https://github.com/nathanpt/lunchbox --tag v0.2.0
 ```
 
 Or the moving tip instead of the tag: `--git
