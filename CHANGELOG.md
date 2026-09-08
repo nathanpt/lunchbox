@@ -6,6 +6,27 @@ edits that a user would not notice do not belong here.
 
 ## [Unreleased]
 
+### Added (pantry milestone)
+
+- 2026-09-08 — Feature-014 passed (ADR-0006). `lunchbox add <git-url>`
+  clones a whole skills repository into `~/.lunchbox/pantry/<name>` and
+  auto-detects the pantry inside it — the repository root, or exactly one
+  first-level subdirectory of Skill packages (`skills/`); ambiguous or
+  empty repositories fail closed with the clone removed, and `--path
+  <subdir>` pins the choice explicitly. Managed pantries join the resolver
+  search order after user `library_paths` (which keep first-wins priority)
+  and before the `.agents/skills` defaults, so pinned Skills resolve with
+  no `--library` once added. `lunchbox update [name]` fast-forward pulls
+  each clone and fails loudly on divergence; removal is deleting the
+  directory — `add`/`update` never write config. `doctor` gains a `git`
+  row and a `pantries:` section (managed pantries never enter the
+  without-Lunchbox estimate). This narrows the v1 "not a skill manager"
+  posture: acquisition of whole repositories is in scope, per-skill
+  install/version/edit stays out (git and Kitter / Skills Manager own
+  that). README rewritten: context-cost-led intro with the blast-radius
+  support and audience, an "Adding skills" section, and the updated
+  not-a-manager boundary.
+
 ## [0.1.0] - 2026-09-06
 
 ### Added (packaging)

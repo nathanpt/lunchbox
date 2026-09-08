@@ -3,7 +3,7 @@
 **Status:** draft, ready to implement — revised 2026-09-06 after design review  
 **One-liner:** Hand an AI coding agent only the Skill packages needed for this job, then take them back.
 
-Lunchbox is a run-scoped skill runtime. It is not a Skill library, marketplace, or symlink manager. Kitter, Skills Manager, qvr, and SkillKit already do those jobs. Lunchbox consumes a pantry (a library of Skill packages) and produces a sealed lunchbox for one run.
+Lunchbox is a run-scoped skill runtime. It is not a Skill library, marketplace, or symlink manager. Kitter, Skills Manager, qvr, and SkillKit already do those jobs. Lunchbox consumes a pantry (a library of Skill packages) and produces a sealed lunchbox for one run. *(Revised 2026-09-08, ADR-0006: acquiring whole skill repositories — `lunchbox add` / `update` into `~/.lunchbox/pantry` — is now in scope; marketplace and per-skill management are not.)*
 
 ```
 library (pantry)     →   lunchbox (this run's menu)     →   worker (pi / omp / subagent)
@@ -46,7 +46,7 @@ Lunchbox is knob 3, with a clean handoff into knobs 1 and 2.
 
 ## 3. Non-goals (v1)
 
-- Replacing Kitter / Skills Manager / qvr / SkillKit
+- Replacing Kitter / Skills Manager / qvr / SkillKit — narrowed 2026-09-08: lunchbox acquires whole skill repositories (`add`/`update`, ADR-0006); per-skill install, versioning, editing, and removal stay out of scope
 - skills.sh marketplace UI
 - Translating `SKILL.md` into Cursor `.mdc` / Copilot formats
 - Multi-device sync, SSO, hosted control plane
@@ -133,6 +133,9 @@ No long-running service. Each command is a process. Use a per-run lockfile + `fl
 ```
 ~/.lunchbox/
   config.toml
+  pantry/                 # ADR-0006: git clones added by `lunchbox add`
+    <name>/               # the repository itself
+    <name>.path           # optional recorded --path override (one line)
   runs/
     <run_id>/
       manifest.toml
@@ -147,8 +150,11 @@ No long-running service. Each command is a process. Use a per-run lockfile + `fl
 Default library search order (first hit wins, later roots are still used for other names):
 
 1. `config.library_paths` in order
-2. `./.agents/skills`
-3. `~/.agents/skills`
+2. `~/.lunchbox/pantry/<name>` managed clones, each at its auto-detected
+   pantry root (repository root or its single Skill-package subdirectory;
+   ADR-0006) — always after user paths, before the ambient defaults
+3. `./.agents/skills`
+4. `~/.agents/skills`
 
 Config is two-layer (decision 2026-09-06):
 
@@ -488,9 +494,24 @@ lunchbox status [run_id]
 lunchbox finish [run_id]
 lunchbox abort [run_id]
 lunchbox gc
+lunchbox add <git-url> [--path <subdir>]      # ADR-0006
+lunchbox update [name]                       # ADR-0006
 lunchbox adapters [--explain]
 lunchbox why [run_id]
 ```
+
+### `add` / `update` (ADR-0006)
+
+`add` clones a whole skills repository into `~/.lunchbox/pantry/<name>`
+(name from the URL's last component, `.git` stripped) and auto-detects the
+pantry inside: the repository root, or exactly one first-level subdirectory
+of Skill packages (`skills/`). Zero or multiple candidates fail closed with
+the clone removed; `--path <subdir>` pins the choice (recorded in
+`<name>.path`, never inside the clone). `update` runs `git pull --ff-only`
+per managed clone, fails loudly on divergence, and re-verifies detection.
+Neither verb writes config; removal is deleting the directory. Doctor
+reports a `git` row and a `pantries:` section; managed pantries never enter
+the without-Lunchbox estimate.
 
 ### `doctor`
 
@@ -802,7 +823,7 @@ First screen:
 - Install
 - `doctor` then `start` / `finish`
 - `menu_tokens` before/after
-- “This is not a skill manager. Point `--library` at Kitter / Skills Manager / `~/.agents/skills`.”
+- “This is not a skill manager. Point `--library` at Kitter / Skills Manager / `~/.agents/skills`.” *(Amended 2026-09-08, ADR-0006: `add`/`update` acquire whole repositories; the README says so and keeps the per-skill boundary.)*
 
 Do not lead with architecture.
 
@@ -825,4 +846,5 @@ Do not lead with architecture.
 | Language | Rust, unconditional | Static binary, Ratatui; ADR-0001 |
 | Config | two-layer: global + `./lunchbox.toml`, project wins, `deny` unions | Per-repo policy; CI use case |
 | Install | `cargo install --locked --git` (v1) | crates.io name taken; no external users yet |
+| Acquisition | `add` clones whole repos into `~/.lunchbox/pantry`; `update` is `git pull --ff-only` | Git is the version system (ADR-0006) |
 | v1 exit | scripted CLI loop + human TUI walkthrough | Both surfaces are the product |

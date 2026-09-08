@@ -205,7 +205,7 @@ mod tests {
         let home = crate::tui::testkit::demo_tree_home();
         crate::config::with_home(home.path(), || {
             let cfg = crate::config::Config::load().unwrap();
-            let listing = library::scan_roots(&cfg.search_roots(&[])).unwrap();
+            let listing = library::scan_roots(&cfg.search_roots(&[]).unwrap()).unwrap();
             let pins = vec![
                 "demo-review".to_string(),
                 "demo-scan".to_string(),

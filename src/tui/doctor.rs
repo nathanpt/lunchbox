@@ -43,6 +43,10 @@ pub fn render(state: &mut DoctorState, frame: &mut Frame, area: Rect) {
             report.adapter
         ))),
     }
+    match &report.git_version {
+        Some(version) => lines.push(Line::from(format!("git [{version}]"))),
+        None => lines.push(Line::from("git (not found)")),
+    }
     for dir in &report.dirs {
         let state = if dir.exists {
             format!("{} skills", dir.skills.len())
@@ -50,6 +54,22 @@ pub fn render(state: &mut DoctorState, frame: &mut Frame, area: Rect) {
             "absent".to_string()
         };
         lines.push(Line::from(format!("{}  {}", dir.dir.display(), state)));
+    }
+    if !report.pantries.is_empty() {
+        lines.push(Line::from("pantries:"));
+        for pantry in &report.pantries {
+            let line = match (&pantry.root, &pantry.error) {
+                (Some(root), _) => format!(
+                    "  {:<16} {}  {} skills",
+                    pantry.name,
+                    root.display(),
+                    pantry.skills
+                ),
+                (None, Some(error)) => format!("  {:<16} error: {}", pantry.name, error),
+                (None, None) => format!("  {:<16} (no root)", pantry.name),
+            };
+            lines.push(Line::from(line));
+        }
     }
     lines.push(Line::from(""));
     lines.push(Line::from(format!(
@@ -151,11 +171,13 @@ mod tests {
         DoctorReport {
             adapter: "pi".to_string(),
             adapter_version: Some("0.84.4".to_string()),
+            git_version: Some("2.99.0".to_string()),
             dirs: vec![DirReport {
                 dir: PathBuf::from("/home/w/.agents/skills"),
                 exists: true,
                 skills: skills.clone(),
             }],
+            pantries: Vec::new(),
             menu_tokens: 27,
             union: skills,
         }

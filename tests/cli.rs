@@ -910,7 +910,7 @@ fn from_manifest_spawn_uses_parent_pack() {
         ],
         "{argv:?}"
     );
-    let recorded = fs::read_to_string(&record).unwrap();
+    let recorded = read_spawn_record(&record);
     assert!(recorded.contains("--no-skills"), "{}", recorded);
 
     lbx()
@@ -1045,7 +1045,7 @@ fn omp_manifest_overlay_and_agents() {
         .expect("agents event present");
     assert_eq!(agents_event["adapter"], serde_json::json!("omp"));
     assert_eq!(agents_event["loaded"], serde_json::json!(false));
-    let recorded = fs::read_to_string(&record).unwrap();
+    let recorded = read_spawn_record(&record);
     assert!(recorded.contains("--config"), "{}", recorded);
 
     lbx()
@@ -1107,7 +1107,7 @@ fn omp_spawn_records_audit_and_overlay() {
         overlay.contains(run.join("workdir").to_str().unwrap()),
         "{overlay}"
     );
-    let recorded = fs::read_to_string(&record).unwrap();
+    let recorded = read_spawn_record(&record);
     assert!(recorded.contains("--config"), "{}", recorded);
 
     lbx()
@@ -1150,6 +1150,18 @@ fn path_with_mock_bin(cwd: &Path) -> std::ffi::OsString {
             .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())),
     )
     .unwrap()
+}
+
+fn read_spawn_record(path: &Path) -> String {
+    for _ in 0..100 {
+        if let Ok(text) = fs::read_to_string(path) {
+            if !text.is_empty() {
+                return text;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    fs::read_to_string(path).expect("spawn record was never written")
 }
 
 fn mock_harness(scratch_dir: &Path, binary: &str) -> PathBuf {
@@ -1223,7 +1235,7 @@ fn pi_spawn_records_audit_and_aborts() {
     );
     assert_eq!(argv[4], "pi");
     assert_eq!(argv[5], "--list-models");
-    let recorded = fs::read_to_string(&record).unwrap();
+    let recorded = read_spawn_record(&record);
     assert!(recorded.contains("--no-skills"), "{}", recorded);
     assert!(recorded.contains("--skill"), "{}", recorded);
 
@@ -1555,4 +1567,343 @@ fn abort_on_finished_run_is_a_no_op() {
         .current_dir(cwd.path())
         .assert()
         .success();
+}
+
+fn mock_git(scratch_dir: &Path) {
+    let bin = scratch_dir.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    fs::write(
+        bin.join("git"),
+        r#"#!/bin/sh
+case "$1" in
+  --version)
+    echo "git version 2.99.0-mock"
+    exit 0
+    ;;
+  clone)
+    url="$2"; dest="$3"
+    case "$url" in
+      *clonefail*)
+        echo "remote: repository not found" >&2
+        exit 1
+        ;;
+      *nested*|*agent-skills*)
+        mkdir -p "$dest/skills/alpha" "$dest/skills/beta" "$dest/.git"
+        printf -- '---\nname: alpha\ndescription: a\n---\n' > "$dest/skills/alpha/SKILL.md"
+        printf -- '---\nname: beta\ndescription: b\n---\n' > "$dest/skills/beta/SKILL.md"
+        ;;
+      *rootshaped*)
+        mkdir -p "$dest/alpha" "$dest/.git"
+        printf -- '---\nname: alpha\ndescription: a\n---\n' > "$dest/alpha/SKILL.md"
+        ;;
+      *ambiguous*)
+        mkdir -p "$dest/alpha" "$dest/skills/beta" "$dest/.git"
+        printf -- '---\nname: alpha\ndescription: a\n---\n' > "$dest/alpha/SKILL.md"
+        printf -- '---\nname: beta\ndescription: b\n---\n' > "$dest/skills/beta/SKILL.md"
+        ;;
+    esac
+    exit 0
+    ;;
+  -C)
+    case "$2" in
+      *divergent*)
+        echo "fatal: Not possible to fast-forward" >&2
+        exit 128
+        ;;
+    esac
+    exit 0
+    ;;
+esac
+echo "unexpected git invocation: $*" >&2
+exit 1
+"#,
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(bin.join("git"), fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+fn pantry_dir(home: &Path, name: &str) -> PathBuf {
+    home.join(".lunchbox").join("pantry").join(name)
+}
+
+#[test]
+fn add_registers_pantry_and_start_resolves() {
+    let home = scratch();
+    let cwd = scratch();
+    mock_git(cwd.path());
+    lbx()
+        .args(["add", "https://example.com/you/agent-skills"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("added          agent-skills"))
+        .stdout(predicates::str::contains("pantry root"))
+        .stdout(predicates::str::contains(
+            pantry_dir(home.path(), "agent-skills")
+                .join("skills")
+                .display()
+                .to_string(),
+        ))
+        .stdout(predicates::str::contains("skills         2"));
+
+    let output = lbx()
+        .args(["doctor", "--json"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let report: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(report["git"], serde_json::json!("2.99.0"));
+    let pantries = report["pantries"].as_array().unwrap();
+    assert_eq!(pantries.len(), 1);
+    assert_eq!(pantries[0]["name"], serde_json::json!("agent-skills"));
+    assert_eq!(pantries[0]["skills"], serde_json::json!(2));
+    assert_eq!(
+        report["menu_tokens"],
+        serde_json::json!(0),
+        "managed pantries must not enter the without estimate"
+    );
+
+    let output = lbx()
+        .args(["start", "--skill", "alpha", "--adapter", "none", "--json"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(scratch().path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let run: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(
+        run["without_menu_tokens"],
+        serde_json::json!(0),
+        "adapter none sees no standing dirs"
+    );
+    assert_eq!(run["skills"].as_array().unwrap().len(), 1);
+    assert_eq!(run["skills"][0]["name"], serde_json::json!("alpha"));
+    lbx()
+        .args(["finish"])
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn add_root_shaped_and_path_override() {
+    let home = scratch();
+    let cwd = scratch();
+    mock_git(cwd.path());
+    lbx()
+        .args(["add", "https://example.com/you/rootshaped"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            pantry_dir(home.path(), "rootshaped").display().to_string(),
+        ));
+
+    lbx()
+        .args(["add", "https://example.com/you/ambiguous", "--path", "skills"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            pantry_dir(home.path(), "ambiguous")
+                .join("skills")
+                .display()
+                .to_string(),
+        ));
+    assert_eq!(
+        fs::read_to_string(
+            home.path()
+                .join(".lunchbox")
+                .join("pantry")
+                .join("ambiguous.path")
+        )
+        .unwrap()
+        .trim(),
+        "skills"
+    );
+
+    lbx()
+        .args(["update"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("updated        ambiguous"))
+        .stdout(predicates::str::contains("updated        rootshaped"));
+}
+
+#[test]
+fn add_failures_fail_closed() {
+    let home = scratch();
+    let cwd = scratch();
+    mock_git(cwd.path());
+    lbx()
+        .args(["add", "https://example.com/you/ambiguous"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("multiple candidate skill roots"))
+        .stderr(predicates::str::contains("skills"));
+    assert!(
+        !pantry_dir(home.path(), "ambiguous").exists(),
+        "failed add must remove its clone"
+    );
+    assert!(!home.path().join(".lunchbox").join("pantry").join("ambiguous.path").exists());
+
+    lbx()
+        .args(["add", "https://example.com/you/clonefail"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("failed to clone"))
+        .stderr(predicates::str::contains("exit 1"))
+        .stderr(predicates::str::contains("repository not found"));
+    assert!(!pantry_dir(home.path(), "clonefail").exists());
+
+    lbx()
+        .args(["add", "https://example.com/you/nested"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    lbx()
+        .args(["add", "https://example.com/other/nested"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "managed pantry 'nested' already exists",
+        ));
+    assert!(pantry_dir(home.path(), "nested").join("skills").is_dir());
+}
+
+#[test]
+fn update_reports_and_fails_loudly() {
+    let home = scratch();
+    let cwd = scratch();
+    mock_git(cwd.path());
+    lbx()
+        .args(["add", "https://example.com/you/nested"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success();
+    lbx()
+        .args(["update", "nested"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("updated        nested"));
+    lbx()
+        .args(["update", "ghost"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("no managed pantry named 'ghost'"));
+
+    let diverged = scratch();
+    let divergent_pantry = diverged.path().join(".lunchbox").join("pantry").join("divergent");
+    fs::create_dir_all(divergent_pantry.join("skills").join("alpha")).unwrap();
+    fs::write(
+        divergent_pantry.join("skills").join("alpha").join("SKILL.md"),
+        "---\nname: alpha\ndescription: a\n---\n",
+    )
+    .unwrap();
+    lbx()
+        .args(["update", "divergent"])
+        .env("HOME", diverged.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "failed to update managed pantry 'divergent'",
+        ))
+        .stderr(predicates::str::contains("exit 128"))
+        .stderr(predicates::str::contains("Not possible to fast-forward"));
+}
+
+#[test]
+fn missing_git_fails_closed() {
+    let home = scratch();
+    let cwd = scratch();
+    fs::create_dir_all(cwd.path().join("emptybin")).unwrap();
+    let empty_path =
+        std::env::join_paths([cwd.path().join("emptybin")]).unwrap();
+    lbx()
+        .args(["add", "https://example.com/you/nested"])
+        .env("HOME", home.path())
+        .env("PATH", &empty_path)
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("failed to run git clone"));
+    assert!(!pantry_dir(home.path(), "nested").exists());
+
+    lbx()
+        .args(["doctor"])
+        .env("HOME", home.path())
+        .env("PATH", &empty_path)
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("git            (not found)"));
+}
+
+#[test]
+fn broken_pantry_fails_start_closed_and_doctor_reports() {
+    let home = scratch();
+    let cwd = scratch();
+    let junk = home.path().join(".lunchbox").join("pantry").join("junk");
+    fs::create_dir_all(junk.join("stuff")).unwrap();
+    lbx()
+        .args(["start", "--skill", "alpha", "--adapter", "none"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("managed pantry 'junk'"))
+        .stderr(predicates::str::contains("no Skill packages found"));
+    assert!(!runs_dir(home.path()).exists(), "no run dir left behind");
+
+    lbx()
+        .args(["doctor"])
+        .env("HOME", home.path())
+        .env("PATH", &path_with_mock_bin(cwd.path()))
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pantries:"))
+        .stdout(predicates::str::contains("junk"))
+        .stdout(predicates::str::contains("error:"));
 }

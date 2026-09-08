@@ -22,7 +22,7 @@ pub struct Preview {
 
 #[cfg(feature = "tui-doctor")]
 pub fn preview(cfg: &Config, roots_extra: &[PathBuf], pins: &[String]) -> Result<Preview> {
-    let roots = cfg.search_roots(roots_extra);
+    let roots = cfg.search_roots(roots_extra)?;
     let mut skills = Vec::new();
     for pin in pins {
         let parsed = crate::resolve::parse_pin(pin)?;

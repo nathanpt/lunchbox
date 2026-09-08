@@ -3,6 +3,7 @@ source: src/tui/doctor.rs
 expression: "frame_to_string(frame.buffer, frame.area)"
 ---
 lunchbox doctor — pi [0.84.4]
+git [2.99.0]
 /home/w/.agents/skills  2 skills
 
 menu_tokens  27  (2 skills union)

@@ -60,7 +60,7 @@
     {
       "id": "feature-005",
       "category": "functional",
-      "description": "TUI skill picker: browse the library, compose a pack, start a real run, finish it \u2014 all from the screen",
+      "description": "TUI skill picker: browse the library, compose a pack, start a real run, finish it — all from the screen",
       "steps": [
         "Open the picker against testdata/skills",
         "Select demo-review and demo-scan and start the run from the screen",
@@ -107,7 +107,7 @@
       "description": "v1 exit bar: scripted MVP CLI loop plus a human walkthrough of all four TUI screens against real state",
       "steps": [
         "Verify feature-001 through feature-007 all pass",
-        "Perform the human walkthrough: doctor on real dirs, picker \u2192 start \u2192 finish, policy edit persisting to the right layer",
+        "Perform the human walkthrough: doctor on real dirs, picker → start → finish, policy edit persisting to the right layer",
         "Record walkthrough result and date in PROGRESS.md"
       ],
       "passes": true,
@@ -191,6 +191,21 @@
       ],
       "passes": true,
       "priority": 11,
+      "dependencies": [
+        "feature-001"
+      ]
+    },
+    {
+      "id": "feature-014",
+      "category": "functional",
+      "description": "Thin git acquisition (ADR-0006): lunchbox add clones a skills repo into the managed pantry root ~/.lunchbox/pantry which resolve/doctor search, and update fast-forwards it",
+      "steps": [
+        "add <url> clones into ~/.lunchbox/pantry/<name>, auto-detects the pantry root (repo root if root children hold SKILL.md, else exactly one first-level subdir that does; --path overrides and is recorded in <name>.path), and the skills are immediately resolvable: doctor lists the pantry and start mounts a skill with no --library",
+        "update [name] runs git pull --ff-only per managed repo and fails loudly on divergence; add removes its clone when detection fails; a broken pantry fails start closed naming the pantry while doctor reports the error without failing",
+        "no pantries configured → doctor and start outputs unchanged except the new git row; add/update fail closed when git is absent; managed pantries never enter the without-Lunchbox estimate and always lose first-wins to user library_paths"
+      ],
+      "passes": true,
+      "priority": 12,
       "dependencies": [
         "feature-001"
       ]

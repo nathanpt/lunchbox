@@ -2,9 +2,15 @@
 
 **Your agent only sees these Skills for this job. Then they vanish.**
 
-Lunchbox is a run-scoped skill runtime. It mounts a sealed per-run workdir
+Every Skill your agent can see costs you on every turn: its name and
+description ride the system prompt of each call, so a fat global menu taxes
+everything you ask — and every subagent inherits the same folder. Lunchbox
+is a run-scoped skill runtime: it mounts a sealed per-run workdir
 containing exactly the Skill packages you pinned, hands it to a worker
-(Pi or Omp), and always unmounts — on success, failure, cancel, or crash.
+(Pi or Omp) that sees nothing else, and always unmounts — on success,
+failure, cancel, or crash. If you drive Pi or Omp and keep Skills,
+lunchbox is how a review helper gets `code-review` and `secrets-scan` for
+one job instead of your whole pantry.
 
 ## Install
 
@@ -40,6 +46,7 @@ lunchbox doctor
 
 ```
 adapter        pi 0.84.4
+git            2.53.0
 skill dirs:
   <project>/.agents/skills   absent
   ~/.agents/skills           absent
@@ -96,6 +103,40 @@ On exit the workdir is unmounted automatically. `lunchbox abort` cancels a
 live run; `lunchbox gc` collects runs older than 24 h plus leaked mounts;
 `lunchbox why` prints a five-line recap of the last run.
 
+Real Skills of your own — see [Adding skills](#adding-skills) below.
+
+## Adding skills
+
+Lunchbox reads Skill packages: a directory holding a `SKILL.md`
+frontmatter file (`name`, `description`) plus optional `scripts/`,
+references, and assets. Point it at a git repository of those:
+
+```sh
+lunchbox add https://github.com/nathanpt/agent-skills
+```
+
+```
+added          agent-skills
+pantry root    ~/.lunchbox/pantry/agent-skills/skills
+skills         6
+```
+
+(Output from 2026-09-08; paths shortened and the skill count follows the
+repository.) The clone lands under `~/.lunchbox/pantry/` and is searched
+from then on — the `start` commands in this README work with no
+`--library`. Lunchbox auto-detects the pantry inside a repo: Skills at
+the repository root, or in a single subdirectory such as `skills/`. If a
+repo offers several candidates, name one: `lunchbox add <url> --path
+skills`. Keep pantries current with `lunchbox update` (fast-forward
+only); stop using one by deleting its directory — nothing is registered
+anywhere else.
+
+Skills you already keep work unchanged: `--library <dir>` per run,
+`library_paths` in `~/.lunchbox/config.toml` or a checked-in
+`./lunchbox.toml`, and the always-scanned `./.agents/skills` and
+`~/.agents/skills`. Your configured paths win when the same name exists
+in both a managed pantry and your own paths.
+
 ## menu_tokens, before and after
 
 `doctor` reports the cost of the menu your agent would eat without
@@ -108,10 +149,11 @@ visible before you mount anything.
 
 ## This is not a skill manager
 
-This is not a skill manager. Point `--library` at Kitter / Skills Manager /
-`~/.agents/skills`. Lunchbox does not store, install, version, or sync
-Skills: it reads from the pantry you already keep, mounts a per-run subset,
-and never writes into your standing skill or agent directories.
+Lunchbox acquires whole Skill repositories (`add` / `update`) and mounts
+per-run subsets of them; git stays the version system. It does not
+install, version, edit, or remove individual Skills — for that, point
+`--library` at Kitter / Skills Manager / `~/.agents/skills` and lunchbox
+will read that pantry without ever writing into it.
 
 ## TUI
 

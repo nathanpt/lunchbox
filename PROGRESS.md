@@ -1,19 +1,22 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-06 (scan-hook milestone)
+Last updated: 2026-09-08 (pantry milestone)
 
 ## Current repository state
 
-v1 + Path B + scan hook complete. Phase 1 + TUI milestone + two simplify
-passes + the README/Omp milestone + the Path B milestone + the scan-hook
+v1 + Path B + scan hook + pantry milestone complete. Phase 1 + TUI
+milestone + two simplify passes + the README/Omp milestone + the Path B
+milestone + the scan-hook milestone + the pantry (thin git installer)
 milestone: core CLI, Pi and Omp Path A adapters, the four v1 TUI screens
 behind cargo features, the DESIGN §25 README, `--from manifest.toml`
-multi-worker runs with per-worker packs, Path B run-local agent files
-(print mode, both adapters), and the `scan_command` policy gate with
-`--override-scan` (ADR-0004). 105 unit + 30 integration tests green in the
-default configuration, 90 + 30 with `--no-default-features`, zero warnings
-in both. **Features 001–013 all pass.** Branch `main`; tree clean after
-each phase commit.
+multi-worker runs with run-local agent files, the `scan_command` policy
+gate with `--override-scan` (ADR-0004), and `lunchbox add` / `update`
+acquiring whole skill repos into `~/.lunchbox/pantry` (ADR-0006 — the
+2026-09-08 pivot that narrowed the "not a skill manager" posture to
+per-skill management). 114 unit + 36 integration tests green in the
+default configuration, 99 + 36 with `--no-default-features`, zero
+warnings in both. **Features 001–014 all pass.** Branch `main`; tree
+clean after each phase commit.
 
 Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.1.0`; crates.io and
@@ -32,7 +35,38 @@ selftests ok. Pre-push: `cargo test` (105+30) and
 `cargo package --list` accepted the manifest (license/repository/readme/
 rust-version present). ADR-0005 confirmation evidence satisfied.
 
-## Scan-hook milestone verification (2026-09-06, this machine)
+## Pantry milestone verification (2026-09-08, this machine)
+
+Exec-plan: `docs/exec-plans/completed/pantry-milestone.md`; contract in
+ADR-0006 (`docs/decisions/0006-thin-git-installer.md`). Binary
+`target/debug/lunchbox`; mock-git integration tests run a `git` shell
+script on PATH (clone materializes fixtures, `-C … pull --ff-only`
+succeeds or simulates divergence, `--version` prints 2.99.0-mock); the
+real GitHub flow runs only in the live checks below.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 114 unit + 36 integration, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 99 + 36 integration, 0 failed, 0 warnings |
+| feature-014 live acquisition | `HOME=<fake> lunchbox add https://github.com/nathanpt/agent-skills` | flagless success: `added agent-skills`, root `…/pantry/agent-skills/skills` (`skills/` auto-detected), `skills 6` |
+| feature-014 resolve | `start --skill grill-me --adapter none` (no `--library`) → `finish` | mounts from the managed pantry (`menu_tokens this run: 15`), workdir gone, `unmounted: true` |
+| feature-014 update | `lunchbox update` | `updated agent-skills` (real `git pull --ff-only`) |
+| Doctor surface | `doctor` / `doctor --json` | `git 2.53.0` row; `pantries:` section with name/root/count; json `git` + `pantries` keys; `menu_tokens 0` unchanged (managed pantries never enter the without estimate) |
+| Fail-closed family | mock-git integration tests | ambiguous repo → `multiple candidate skill roots` + clone removed; clone failure → exit + stderr excerpt; existing name → `already exists`; `update ghost` → `no managed pantry named`; divergence → `exit 128` + `Not possible to fast-forward`; junk dir in pantry → `start` fails naming the pantry, `doctor` reports `error:` and exits 0; empty PATH → `failed to run git clone` + `git (not found)` |
+| `--path` override | `add …/ambiguous --path skills` | succeeds where auto-detect would fail; `ambiguous.path` records `skills`; `update` keeps honoring it |
+| No drift | byte-compare vs pre-change binary (scratch worktree at `8900e7c`), empty pantry, run-id normalized | `adapters`, `tui preview --json`, `start` human output identical; `doctor` differs only by the `git` row |
+| README | doctor snippet vs live output | byte-identical (abbreviations per the note); add example captured live 2026-09-08 |
+
+Deviations from the exec-plan, recorded here: the added parallel test
+load exposed a pre-existing race — `--no-wait` spawn tests read the mock
+harness's argv record immediately after `start` exits, before the child
+had necessarily written it (`omp_manifest_overlay_and_agents` failed
+once under load); the four racy sites now use a polling
+`read_spawn_record` (5 s ceiling; the scanner-record site is synchronous
+and unchanged). Verified stable across three consecutive full-suite
+runs. The plan's `search_roots` ripple covered exactly the four listed
+call sites; the doctor snapshot update was the only pinned-output change
+(the expected `git [2.99.0]` line).
 
 Exec-plan: `docs/exec-plans/completed/scan-hook-milestone.md`; contract in
 ADR-0004 (`docs/decisions/0004-scan-hook-contract.md`). Fake tree = temp

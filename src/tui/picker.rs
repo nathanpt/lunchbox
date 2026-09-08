@@ -235,7 +235,7 @@ mod tests {
         crate::config::with_home(home, || {
             let cfg = Config::load().unwrap();
             let libraries = vec![home.join(".agents").join("skills")];
-            let listing = library::scan_roots(&cfg.search_roots(&libraries)).unwrap();
+            let listing = library::scan_roots(&cfg.search_roots(&libraries).unwrap()).unwrap();
             PickerState::new(cfg, libraries, listing)
         })
     }

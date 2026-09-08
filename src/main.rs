@@ -3,6 +3,7 @@ mod config;
 mod hash;
 mod library;
 mod mount;
+mod pantry;
 mod resolve;
 mod run;
 mod tokens;
@@ -61,6 +62,14 @@ enum CliCommand {
     Adapters {
         #[arg(long)]
         explain: bool,
+    },
+    Add {
+        url: String,
+        #[arg(long, value_name = "SUBDIR")]
+        path: Option<String>,
+    },
+    Update {
+        name: Option<String>,
     },
     Tui {
         #[command(subcommand)]
@@ -136,6 +145,8 @@ fn main() -> ExitCode {
         CliCommand::Gc => cmd_gc(),
         CliCommand::Why { run_id, json } => cmd_why(run_id.as_deref(), json),
         CliCommand::Adapters { explain } => cmd_adapters(explain),
+        CliCommand::Add { url, path } => cmd_add(&url, path.as_deref()),
+        CliCommand::Update { name } => cmd_update(name.as_deref()),
         CliCommand::Tui { screen } => cmd_tui(screen),
     };
     match result {
@@ -164,6 +175,10 @@ fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
         match &report.adapter_version {
             Some(version) => println!("adapter        {} {version}", report.adapter),
             None => println!("adapter        {} (not detected)", report.adapter),
+        }
+        match &report.git_version {
+            Some(version) => println!("git            {version}"),
+            None => println!("git            (not found)"),
         }
         println!("skill dirs:");
         for dir_report in &report.dirs {
@@ -197,6 +212,36 @@ fn cmd_doctor(adapter_override: Option<&str>, json: bool) -> Result<ExitCode> {
                 println!("  {name}  in {}", dirs.join(", "));
             }
         }
+        if !report.pantries.is_empty() {
+            println!("pantries:");
+            for pantry in &report.pantries {
+                match (&pantry.root, &pantry.error) {
+                    (Some(root), _) => println!(
+                        "  {:<16} {}  {} skills",
+                        pantry.name,
+                        root.display(),
+                        pantry.skills
+                    ),
+                    (None, Some(error)) => println!("  {:<16} error: {}", pantry.name, error),
+                    (None, None) => println!("  {:<16} (no root)", pantry.name),
+                }
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_add(url: &str, path: Option<&str>) -> Result<ExitCode> {
+    let added = pantry::add(url, path)?;
+    println!("added          {}", added.name);
+    println!("pantry root    {}", added.root.display());
+    println!("skills         {}", added.skills);
+    Ok(ExitCode::SUCCESS)
+}
+
+fn cmd_update(name: Option<&str>) -> Result<ExitCode> {
+    for pantry in pantry::update(name)? {
+        println!("updated        {pantry}");
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -277,7 +322,7 @@ fn tui_preview(
             println!("{output}");
             Ok(ExitCode::SUCCESS)
         } else {
-            let listing = library::scan_roots(&cfg.search_roots(&libraries))?;
+            let listing = library::scan_roots(&cfg.search_roots(&libraries)?)?;
             let mut state = tui::preview::PreviewState::new(
                 listing,
                 preview.without_menu_tokens,
@@ -301,7 +346,7 @@ fn tui_picker(libraries: Vec<String>, json: bool) -> Result<ExitCode> {
     {
         let cfg = Config::load()?;
         let libraries: Vec<PathBuf> = libraries.iter().map(PathBuf::from).collect();
-        let listing = library::scan_roots(&cfg.search_roots(&libraries))?;
+        let listing = library::scan_roots(&cfg.search_roots(&libraries)?)?;
         if json {
             let output = json!({
                 "library": listing.iter().map(|s| json!({

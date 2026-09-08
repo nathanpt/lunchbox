@@ -58,7 +58,7 @@ pub fn resolve(
     roots_extra: &[PathBuf],
     override_scan: bool,
 ) -> Result<Vec<Locked>> {
-    let roots = cfg.search_roots(roots_extra);
+    let roots = cfg.search_roots(roots_extra)?;
     let mut locked: Vec<Locked> = Vec::new();
     for pin in pins {
         let pin = parse_pin(pin)?;
@@ -131,7 +131,7 @@ fn spawn_scan(program: &str, command: &str, source: &Path) -> Result<Output> {
         .with_context(|| format!("failed to run scan_command '{command}'"))
 }
 
-fn stderr_excerpt(stderr: &[u8]) -> String {
+pub(crate) fn stderr_excerpt(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let text = text.trim_end();
     if text.is_empty() {

@@ -144,19 +144,24 @@ pub fn union_menu(adapter: &dyn Adapter, cfg: &Config) -> (u64, Vec<FoundDirSkil
 pub struct DoctorReport {
     pub adapter: String,
     pub adapter_version: Option<String>,
+    pub git_version: Option<String>,
     pub dirs: Vec<DirReport>,
+    pub pantries: Vec<crate::pantry::PantryStatus>,
     pub menu_tokens: u64,
     pub union: Vec<FoundDirSkill>,
 }
 
 pub fn doctor_report(adapter: &dyn Adapter, cfg: &Config) -> Result<DoctorReport> {
     let adapter_version = adapter.detect()?;
+    let git_version = detect_version("git")?;
     let dirs = scan_dirs(adapter, cfg);
     let (menu_tokens, union) = union_from(&dirs);
     Ok(DoctorReport {
         adapter: adapter.name().to_string(),
         adapter_version,
+        git_version,
         dirs,
+        pantries: crate::pantry::pantry_statuses(),
         menu_tokens,
         union,
     })
@@ -176,10 +181,18 @@ impl DoctorReport {
         serde_json::json!({
             "adapter": self.adapter,
             "adapter_version": self.adapter_version,
+            "git": self.git_version,
             "skill_dirs": self.dirs.iter().map(|r| serde_json::json!({
                 "dir": r.dir,
                 "exists": r.exists,
                 "skills": r.skills.len(),
+            })).collect::<Vec<_>>(),
+            "pantries": self.pantries.iter().map(|p| serde_json::json!({
+                "name": p.name,
+                "repo": p.repo,
+                "root": p.root,
+                "skills": p.skills,
+                "error": p.error,
             })).collect::<Vec<_>>(),
             "menu_tokens": self.menu_tokens,
             "fattest": fattest.iter().map(|s| serde_json::json!({"name": s.name, "tokens": s.tokens})).collect::<Vec<_>>(),

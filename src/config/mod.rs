@@ -181,18 +181,19 @@ impl Config {
         Ok(config)
     }
 
-    pub fn search_roots(&self, cli_libraries: &[PathBuf]) -> Vec<PathBuf> {
+    pub fn search_roots(&self, cli_libraries: &[PathBuf]) -> Result<Vec<PathBuf>> {
         let home = env::var_os("HOME").map(PathBuf::from);
         let mut roots: Vec<PathBuf> = cli_libraries
             .iter()
             .map(|p| absolutize(p, home.as_deref()))
             .collect();
         roots.extend(self.library_paths.iter().cloned());
+        roots.extend(crate::pantry::resolve_roots()?);
         roots.push(absolutize(Path::new(".agents/skills"), home.as_deref()));
         if let Some(home) = home {
             roots.push(home.join(".agents").join("skills"));
         }
-        roots
+        Ok(roots)
     }
 
     fn expand_paths(&mut self, home: &Path) {

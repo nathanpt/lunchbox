@@ -16,7 +16,8 @@ DESIGN §4.
 
 - Entry point: a CLI invocation — argv in, output/exit code out.
 - Command surface: DESIGN §16, implemented in `src/main.rs` (clap derive):
-  `doctor`, `start`, `status`, `finish`, `abort`, `gc`, `why`, `adapters`.
+  `doctor`, `start`, `status`, `finish`, `abort`, `gc`, `why`, `adapters`,
+  `add`, `update`.
 - `start` is the spine: config load → resolve pins → create run dir →
   manifest → mount → lock → audit → spawn (adapter-dependent) → teardown.
   Any failure after run-dir creation removes the run dir entirely
@@ -35,6 +36,13 @@ argv → config (two-layer merge) → resolve (pins → Locked)
   `./lunchbox.toml`): scalars project-wins, `deny` unions, `allow`
   intersects, `library_paths` project-prepended. Unknown key in either
   layer is a hard error.
+- `src/pantry.rs` — thin git acquisition (ADR-0006): `add` clones a whole
+  skills repo into `~/.lunchbox/pantry/<name>` (name from the URL),
+  auto-detects the pantry root inside (repo root, or exactly one
+  first-level subdir of Skill packages; `--path` overrides via
+  `<name>.path`), `update` fast-forward pulls; `search_roots` inserts the
+  managed roots after user `library_paths`, and a broken pantry fails
+  resolution closed while `doctor` reports it per pantry.
 - `src/library/` + `src/hash/` — Skill identity (frontmatter name, else
   directory name) and the canonical tree hash (golden-tested).
 - `src/resolve/` — pin expansion and the policy gates (hash match, deny,
@@ -74,7 +82,9 @@ argv → config (two-layer merge) → resolve (pins → Locked)
   configured → `mounted` → `agents` → `spawn` → `unmounted`), `result.json`,
   `pid` when a child is spawned. Formats and locations are fixed by DESIGN
   §7/§9/§18 (settled at the 2026-09-06 design review); schema changes need
-  a new DESIGN revision, not silent drift.
+  a new DESIGN revision, not silent drift. Acquisition state lives under
+  `~/.lunchbox/pantry/` (git clones + optional `.path` overrides,
+  ADR-0006) — lunchbox writes only inside `~/.lunchbox`.
 - Lunchbox never writes into standing skill or agent directories
   (DESIGN §20.2).
 
