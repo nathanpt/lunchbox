@@ -12,9 +12,8 @@ fail-closed pinless `start`, and the `lunchbox menu` app (Pantry,
 Manifests + editor, Doctor, Policy, confirmation-gated mounts) that
 replaced the four `tui <screen>` subcommands (ADR-0007; breaking,
 0.3.0-pending). 155 unit + 33 cli + 4 menu_pty tests green in the
-default configuration (0 warnings), 118 + 33 with
-`--no-default-features` (5 pre-existing dead-code warnings in
-`src/tui/menu/manifests.rs`, tracked as TD-003). Branch `main`; tree
+default configuration and 113 + 33 with `--no-default-features`,
+zero warnings in both. Branch `main`; tree
 clean after each phase commit.
 
 Feature-022 (run-scoped tool selection, ADR-0009) is complete:
