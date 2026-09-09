@@ -1,6 +1,6 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-09 (manifest editor tools picker — feature-023)
+Last updated: 2026-09-09 (v0.4.0 tools milestone release)
 
 ## Current repository state
 
@@ -11,7 +11,7 @@ complete. Core CLI, Pi and Omp Path A adapters, `--from` manifests
 fail-closed pinless `start`, and the `lunchbox menu` app (Pantry,
 Manifests + editor, Doctor, Policy, confirmation-gated mounts) that
 replaced the four `tui <screen>` subcommands (ADR-0007; breaking,
-0.3.0-pending). 155 unit + 33 cli + 4 menu_pty tests green in the
+shipped as `0.3.0`). 155 unit + 33 cli + 4 menu_pty tests green in the
 default configuration and 113 + 33 with `--no-default-features`,
 zero warnings in both. Branch `main`; tree
 clean after each phase commit.
@@ -27,9 +27,28 @@ the probe-pinned adapter tables with `a` for custom names, and saves
 write the per-worker `tools` key. **Features 001–023 all pass.**
 
 Distribution (ADR-0005): MIT, git-only install from
-https://github.com/nathanpt/lunchbox, tagged `v0.3.0` (latest;
-`v0.1.0`/`v0.2.0` earlier); crates.io and prebuilt Release binaries
+https://github.com/nathanpt/lunchbox, tagged `v0.4.0` (latest;
+`v0.1.0`–`v0.3.0` earlier); crates.io and prebuilt Release binaries
 deferred.
+
+## v0.4.0 distribution verification (2026-09-09, this machine)
+
+`main` + tag `v0.4.0` at `cb359b3` pushed (packaging commit: version
+bump, README install snippet `--tag v0.4.0`, CHANGELOG `[0.4.0]`
+release section, AGENTS phase line). TD-003 paid first (`3e852fa`):
+the manifest listing machinery moved behind the tui-menu gate, so
+`cargo test --no-default-features` is back to zero warnings. Clean-root
+install of the blessed command — `cargo install --locked --git
+https://github.com/nathanpt/lunchbox --tag v0.4.0 --root /tmp/lbx-dist4`
+— succeeded; the installed binary reports `lunchbox 0.4.0` (tagged
+commit `cb359b33`), and the release surfaces smoke-check fresh-HOME:
+`start --help` lists `--tool <TOOL>`; `menu` piped fails closed
+(`menu requires a terminal; stdout is not a TTY`, exit 1); `tui doctor`
+is `unrecognized subcommand 'tui'`; pinless `start` errors
+`no skills pinned: …`; and the tools milestone is live end to end —
+`start --library testdata/skills --skill demo-review --adapter pi
+--tool read --dry-run` prints `tools          read (1)`,
+`tool_tokens    this run: 164`, and argv tail `--tools` / `read`.
 
 ## Manifest editor tools picker — feature-023 (2026-09-09, this machine)
 
