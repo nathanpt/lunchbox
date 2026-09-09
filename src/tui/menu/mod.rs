@@ -339,7 +339,7 @@ fn footer_text(state: &MenuState) -> &'static str {
         Some(Layer::Policy(_)) => "Tab layer · ←/→ list · a add · d delete · Esc back",
         Some(Layer::Confirm(_)) => "Enter mount · Esc cancel · f finish",
         Some(Layer::Editor(_)) => {
-            "Tab pane · Space pack · t task · b budget · s save · Esc back · q quit"
+            "Tab pane · Space select · a add tool · t task · b budget · s save · Esc back · q quit"
         }
         None => "",
     }

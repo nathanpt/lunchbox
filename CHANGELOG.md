@@ -19,6 +19,12 @@ edits that a user would not notice do not belong here.
   what the selection costs; `max_menu_tokens` still gates skills only.
   Opt-in posture: no selection means no flags, no output lines, no
   JSON keys — the harness default is unchanged.
+- 2026-09-09 — Feature-023: the `lunchbox menu` manifest editor picks
+  tools. Tab cycles workers → skills → tools; the tools checklist
+  seeds from the probe-pinned adapter tables (custom names via `a`,
+  rendered `?` until priced); Space toggles the focused worker's
+  selection, and saves write the per-worker `tools` array (omitted
+  when empty).
 
 ## [0.3.0] - 2026-09-08
 

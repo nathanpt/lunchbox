@@ -340,6 +340,24 @@
       "dependencies": [
         "feature-021"
       ]
+    },
+    {
+      "id": "feature-023",
+      "category": "functional",
+      "description": "manifest editor tools picker: the menu editor's Tab cycle gains a tools pane seeded from the probe-pinned adapter tables, `a` adds custom names as unpriced ?, and per-worker selection saves into the manifest tools key (menu surface for ADR-0009)",
+      "steps": [
+        "editor WorkerRow carries tools; manifest loads map them in, new workers start empty, and build_input maps non-empty selections into run::Worker.tools",
+        "editor Focus cycles Workers → Skills → Tools; the tools pane lists the adapter's probe table (priced) plus the worker's custom names (unpriced ?); j/k clamps the tool cursor; Space toggles the tool under the cursor from the Tools pane and keeps toggling skills from Workers/Skills",
+        "a opens an add-tools CSV input: an empty commit closes it with no change, any empty segment keeps it open with `tool name must not be empty`, duplicates are skipped in typed order",
+        "the editor renders per-worker `tools:` lines, the priced checklist, and the no-table hint for adapter none; the hint bar and the menu footer advertise `a add tool`",
+        "saves write the per-worker tools array through toml_edit (key omitted when empty) with format and comments preserved",
+        "new editor unit tests cover toggle/save round-trip, CSV add, manifest load round-trip, Tab/Space dispatch, and render; the menu_pty e2e selects read in the pane, saves, and asserts start --from e2e --adapter pi --dry-run prints --tools, read, and tool_tokens 164"
+      ],
+      "passes": true,
+      "priority": 21,
+      "dependencies": [
+        "feature-022"
+      ]
     }
   ]
 }

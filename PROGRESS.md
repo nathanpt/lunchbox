@@ -1,6 +1,6 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-09 (tool selection — feature-022)
+Last updated: 2026-09-09 (manifest editor tools picker — feature-023)
 
 ## Current repository state
 
@@ -11,21 +11,50 @@ complete. Core CLI, Pi and Omp Path A adapters, `--from` manifests
 fail-closed pinless `start`, and the `lunchbox menu` app (Pantry,
 Manifests + editor, Doctor, Policy, confirmation-gated mounts) that
 replaced the four `tui <screen>` subcommands (ADR-0007; breaking,
-0.3.0-pending). 150 unit + 33 cli + 4 menu_pty tests green in the
-default configuration, 118 + 33 with `--no-default-features`, zero
-warnings in both. Branch `main`; tree
+0.3.0-pending). 155 unit + 33 cli + 4 menu_pty tests green in the
+default configuration (0 warnings), 118 + 33 with
+`--no-default-features` (5 pre-existing dead-code warnings in
+`src/tui/menu/manifests.rs`, tracked as TD-003). Branch `main`; tree
 clean after each phase commit.
 
 Feature-022 (run-scoped tool selection, ADR-0009) is complete:
 repeatable `--tool` on `start`, per-worker `tools` in manifests,
 pi/omp allowlist flags, manifest-driven Path B agent `tools:` lines,
-and a separate probe-pinned `tool_tokens` estimate. **Features 001–022
-all pass.**
+and a separate probe-pinned `tool_tokens` estimate.
+
+Feature-023 (manifest editor tools picker) is complete: the menu
+editor cycles Workers → Skills → Tools, the tools checklist seeds from
+the probe-pinned adapter tables with `a` for custom names, and saves
+write the per-worker `tools` key. **Features 001–023 all pass.**
 
 Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.3.0` (latest;
 `v0.1.0`/`v0.2.0` earlier); crates.io and prebuilt Release binaries
 deferred.
+
+## Manifest editor tools picker — feature-023 (2026-09-09, this machine)
+
+The menu editor gained a third pane for ADR-0009 tool selection:
+Tab cycles workers → skills → tools; the tools checklist seeds from
+the probe-pinned adapter tables (the same `src/adapter/tools.rs` data
+that prices `tool_tokens`) plus the worker's custom names rendered `?`
+until a table prices them; Space toggles under the cursor (Workers and
+Skills focus still toggle skills); `a` opens a CSV input for custom or
+extension names (duplicates skipped in typed order, an empty segment
+keeps the input open); per-worker `tools:` summary lines render under
+the workers; saves write the `tools` array via toml_edit, omitted when
+empty. The editor hint bar and the menu footer advertise `a add tool`.
+Sequence note: the editor opens on the Skills pane, so Tools is one
+Tab away — the plan's key sketches assumed a Workers start; the
+behavior spec (cycle order, Space dispatch, `a` binding) landed as
+written and the tests assert outcomes, not tab counts.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 155 unit + 33 cli + 4 menu_pty, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 118 + 33, 0 failed; 5 dead-code warnings in `src/tui/menu/manifests.rs` proven present at clean HEAD `d0f317d` via `git stash` (the feature-022 row's "0 warnings" no longer holds) — recorded as TD-003 |
+| Editor unit tests | `cargo test --bin lunchbox editor` | ok — 13 passed incl. the five new tests (toggle/save round-trip, CSV add, load round-trip, Tab/Space dispatch, render) |
+| Pty E2E | `cargo test --test menu_pty menu_e2e_editor_roundtrip` | ok — pane selects read (worker row shows `tools: read`; the 24-row pty clips the pane tail), save writes `tools = [` + `"read"`, `--adapter none` start keeps `menu_tokens    this run: 203`, then `--adapter pi --dry-run` prints `--tools`, `read`, `tool_tokens    this run: 164` |
 
 ## Tool selection — feature-022 (2026-09-09, this machine)
 

@@ -13,12 +13,13 @@ use std::path::PathBuf;
 pub struct WorkerRow {
     pub name: String,
     pub pack: Vec<String>,
+    pub tools: Vec<String>,
 }
-
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Focus {
     Workers,
     Skills,
+    Tools,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,7 @@ pub enum Field {
     Task,
     Budget,
     ManifestName,
+    AddTool,
 }
 
 impl Field {
@@ -38,6 +40,7 @@ impl Field {
             Field::Task => "task",
             Field::Budget => "budget",
             Field::ManifestName => "manifest name",
+            Field::AddTool => "add tool",
         }
     }
 }
@@ -84,6 +87,7 @@ pub struct EditorState {
     pub pin_hashes: bool,
     pub skills: Vec<ListedSkill>,
     pub skill_cursor: usize,
+    pub tool_cursor: usize,
     pub input: String,
     pub input_mode: Option<Field>,
     pub save_target: SaveTarget,
@@ -109,6 +113,7 @@ impl EditorState {
                 .map(|worker| WorkerRow {
                     name: worker.name.clone(),
                     pack: worker.pack.clone(),
+                    tools: worker.tools.clone().unwrap_or_default(),
                 })
                 .collect(),
             input.task.clone(),
@@ -127,6 +132,7 @@ impl EditorState {
             vec![WorkerRow {
                 name: "main".to_string(),
                 pack: Vec::new(),
+                tools: Vec::new(),
             }],
             String::new(),
             "none".to_string(),
@@ -167,6 +173,7 @@ impl EditorState {
             pin_hashes: false,
             skills,
             skill_cursor: 0,
+            tool_cursor: 0,
             input: String::new(),
             input_mode: None,
             save_target: SaveTarget::Project,
@@ -221,7 +228,7 @@ impl EditorState {
                     name: worker.name.clone(),
                     pack: worker.pack.clone(),
                     description: None,
-                    tools: None,
+                    tools: (!worker.tools.is_empty()).then(|| worker.tools.clone()),
                 })
                 .collect(),
         }
@@ -243,6 +250,7 @@ impl EditorState {
             Some(Field::NewName) => format!("new worker name: {}", self.input),
             Some(Field::Rename) => format!("rename worker: {}", self.input),
             Some(Field::Task) => format!("task: {}", self.input),
+            Some(Field::AddTool) => format!("add tools (csv): {}", self.input),
             Some(Field::Budget) => format!("budget max_menu_tokens: {}", self.input),
             None => self.status.clone(),
         }
@@ -251,7 +259,8 @@ impl EditorState {
     fn toggle_focus(&mut self) {
         self.focus = match self.focus {
             Focus::Workers => Focus::Skills,
-            Focus::Skills => Focus::Workers,
+            Focus::Skills => Focus::Tools,
+            Focus::Tools => Focus::Workers,
         };
     }
 
@@ -275,6 +284,15 @@ impl EditorState {
                 let next = self.skill_cursor as i64 + delta;
                 self.skill_cursor = next.clamp(0, max as i64) as usize;
             }
+            Focus::Tools => {
+                let len = self.tools_list().len();
+                if len == 0 {
+                    self.tool_cursor = 0;
+                    return;
+                }
+                let next = self.tool_cursor as i64 + delta;
+                self.tool_cursor = next.clamp(0, (len - 1) as i64) as usize;
+            }
         }
     }
 
@@ -289,6 +307,43 @@ impl EditorState {
             worker.pack.remove(at);
         } else {
             worker.pack.push(skill.name.clone());
+        }
+        self.refresh_status();
+    }
+
+    fn tools_list(&self) -> Vec<(String, Option<u64>)> {
+        let mut entries: Vec<(String, Option<u64>)> =
+            crate::adapter::tools::table(&self.adapter)
+                .map(|table| {
+                    table
+                        .iter()
+                        .map(|tool| (tool.name.to_string(), Some(tool.tokens)))
+                        .collect()
+                })
+                .unwrap_or_default();
+        if let Some(worker) = self.workers.get(self.worker_cursor) {
+            for name in &worker.tools {
+                if !entries.iter().any(|(entry, _)| entry == name) {
+                    entries.push((name.clone(), None));
+                }
+            }
+        }
+        entries
+    }
+
+    fn toggle_tool(&mut self) {
+        let entries = self.tools_list();
+        let Some((name, _)) = entries.get(self.tool_cursor) else {
+            return;
+        };
+        let name = name.clone();
+        let Some(worker) = self.workers.get_mut(self.worker_cursor) else {
+            return;
+        };
+        if let Some(at) = worker.tools.iter().position(|tool| tool == &name) {
+            worker.tools.remove(at);
+        } else {
+            worker.tools.push(name);
         }
         self.refresh_status();
     }
@@ -366,6 +421,7 @@ impl EditorState {
                 self.workers.push(WorkerRow {
                     name: value,
                     pack: Vec::new(),
+                    tools: Vec::new(),
                 });
                 self.worker_cursor = self.workers.len() - 1;
                 self.focus = Focus::Workers;
@@ -390,6 +446,22 @@ impl EditorState {
                     Err(message) => {
                         self.status = message;
                         return;
+                    }
+                }
+            }
+            Field::AddTool => {
+                if !value.is_empty() {
+                    if value.split(',').any(|segment| segment.trim().is_empty()) {
+                        self.status = "tool name must not be empty".to_string();
+                        return;
+                    }
+                    if let Some(worker) = self.workers.get_mut(self.worker_cursor) {
+                        for segment in value.split(',') {
+                            let name = segment.trim();
+                            if !worker.tools.iter().any(|tool| tool.as_str() == name) {
+                                worker.tools.push(name.to_string());
+                            }
+                        }
                     }
                 }
             }
@@ -441,6 +513,13 @@ pub fn save(state: &mut EditorState, cfg: &Config, libraries: &[PathBuf]) -> Res
             }
         }
         table["pack"] = toml_edit::value(pack);
+        if !worker.tools.is_empty() {
+            let mut tools = toml_edit::Array::new();
+            for tool in &worker.tools {
+                tools.push(tool.clone());
+            }
+            table["tools"] = toml_edit::value(tools);
+        }
         workers.push(table);
     }
     doc.as_table_mut().remove("workers");
@@ -592,6 +671,12 @@ pub fn render(state: &mut EditorState, frame: &mut Frame, area: Rect) {
                 pack,
             ]));
         }
+        if !worker.tools.is_empty() {
+            lines.push(Line::from(chrome::dim(format!(
+                "  tools: {}",
+                worker.tools.join(", ")
+            ))));
+        }
     }
     if state.workers.is_empty() {
         lines.push(Line::from(chrome::dim("  (no workers)".to_string())));
@@ -633,8 +718,48 @@ pub fn render(state: &mut EditorState, frame: &mut Frame, area: Rect) {
     }
 
     lines.push(Line::from(""));
+    let tools_focused = state.focus == Focus::Tools;
+    lines.push(Line::from(chrome::bold(format!(
+        "tools{}",
+        if tools_focused { " ▸" } else { "" }
+    ))));
+    let tools = state.tools_list();
+    for (index, (name, tokens)) in tools.iter().enumerate() {
+        let cursor_here = index == state.tool_cursor && tools_focused;
+        let marker = if cursor_here { "▸ " } else { "  " };
+        let selected = state
+            .workers
+            .get(state.worker_cursor)
+            .is_some_and(|worker| worker.tools.contains(name));
+        let check = if selected {
+            chrome::good("[x]")
+        } else {
+            chrome::dim("[ ]")
+        };
+        let cost = match tokens {
+            Some(tokens) => tokens.to_string(),
+            None => "?".to_string(),
+        };
+        let body = format!(" {:<16} {}", name, cost);
+        if cursor_here {
+            lines.push(Line::from(vec![Span::raw(marker), check, chrome::bold(body)]));
+        } else {
+            lines.push(Line::from(vec![Span::raw(marker), check, Span::raw(body)]));
+        }
+    }
+    if tools.is_empty() {
+        lines.push(Line::from(chrome::dim("  (no tools selected)".to_string())));
+    }
+    if crate::adapter::tools::table(&state.adapter).is_none() {
+        lines.push(Line::from(chrome::dim(format!(
+            "  (no tool table for adapter {} — c to cycle adapter)",
+            state.adapter
+        ))));
+    }
+
+    lines.push(Line::from(""));
     lines.push(Line::from(chrome::dim(
-        "w/r/d workers · c adapter · p pin hashes · f finish · S save+start".to_string(),
+        "w/r/d workers · c adapter · a add tool · p pin hashes · f finish · S save+start".to_string(),
     )));
     frame.render_widget(Paragraph::new(lines), area);
 }
@@ -665,7 +790,11 @@ pub fn handle_event(state: &mut EditorState, event: &Event) -> Action {
             Action::Continue
         }
         (KeyCode::Char(' '), _) => {
-            state.toggle_skill();
+            if state.focus == Focus::Tools {
+                state.toggle_tool();
+            } else {
+                state.toggle_skill();
+            }
             Action::Continue
         }
         (KeyCode::Char('r'), KeyModifiers::NONE) => {
@@ -686,6 +815,10 @@ pub fn handle_event(state: &mut EditorState, event: &Event) -> Action {
         }
         (KeyCode::Char('b'), KeyModifiers::NONE) => {
             state.begin_input(Field::Budget);
+            Action::Continue
+        }
+        (KeyCode::Char('a'), KeyModifiers::NONE) => {
+            state.begin_input(Field::AddTool);
             Action::Continue
         }
         (KeyCode::Char('c'), KeyModifiers::NONE) => {
@@ -987,6 +1120,200 @@ mod tests {
                 .unwrap();
             assert_eq!(hash.len(), 64, "{pinned}");
             assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "{pinned}");
+        });
+    }
+
+    #[test]
+    fn tools_pane_toggles_and_saves() {
+        let home = demo_tree_home();
+        let cfg = config_for(home.path());
+        let libraries = libraries_for(home.path());
+        crate::config::with_home(home.path(), || {
+            let mut state = named_draft(&cfg, &libraries, "e2e");
+            handle_event(&mut state, &press(KeyCode::Char('c')));
+            assert_eq!(state.adapter, "pi");
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Tools);
+            for _ in 0..6 {
+                handle_event(&mut state, &press(KeyCode::Down));
+            }
+            assert_eq!(state.tools_list()[state.tool_cursor].0, "read");
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert_eq!(state.workers[0].tools, vec!["read".to_string()]);
+
+            state.save_target = SaveTarget::Home;
+            save(&mut state, &cfg, &libraries).unwrap();
+            let path = state.path.clone().unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(text.contains("tools = ["), "{text}");
+            assert!(text.contains("\"read\""), "{text}");
+
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert!(state.workers[0].tools.is_empty());
+            save(&mut state, &cfg, &libraries).unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(!text.contains("tools"), "{text}");
+        });
+    }
+
+    #[test]
+    fn custom_tool_add_csv() {
+        let home = demo_tree_home();
+        let cfg = config_for(home.path());
+        let libraries = libraries_for(home.path());
+        crate::config::with_home(home.path(), || {
+            let mut state = named_draft(&cfg, &libraries, "e2e");
+            handle_event(&mut state, &press(KeyCode::Char('a')));
+            assert!(matches!(state.input_mode, Some(Field::AddTool)));
+            type_input(&mut state, "web_search, mcp_foo");
+            assert_eq!(
+                state.workers[0].tools,
+                vec!["web_search".to_string(), "mcp_foo".to_string()]
+            );
+
+            handle_event(&mut state, &press(KeyCode::Char('a')));
+            type_input(&mut state, "x, ,");
+            assert_eq!(state.status, "tool name must not be empty");
+            assert!(matches!(state.input_mode, Some(Field::AddTool)));
+            assert_eq!(state.workers[0].tools.len(), 2, "rejected input changes nothing");
+            handle_event(&mut state, &press(KeyCode::Esc));
+
+            handle_event(&mut state, &press(KeyCode::Char('a')));
+            handle_event(&mut state, &press(KeyCode::Enter));
+            assert!(state.input_mode.is_none());
+            assert_eq!(state.workers[0].tools.len(), 2, "empty commit changes nothing");
+
+            handle_event(&mut state, &press(KeyCode::Char('a')));
+            type_input(&mut state, "web_search, dup");
+            assert_eq!(
+                state.workers[0].tools,
+                vec![
+                    "web_search".to_string(),
+                    "mcp_foo".to_string(),
+                    "dup".to_string()
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn tools_load_round_trip() {
+        let home = demo_tree_home();
+        let cfg = config_for(home.path());
+        let libraries = libraries_for(home.path());
+        crate::config::with_home(home.path(), || {
+            let dir = tempfile::TempDir::new().unwrap();
+            let path = dir.path().join("tools.toml");
+            std::fs::write(
+                &path,
+                "schema = 1\ntask = \"t\"\nadapter = \"pi\"\n\
+                 [[workers]]\nname = \"w\"\npack = [\"demo-review\"]\ntools = [\"read\", \"grep\"]\n",
+            )
+            .unwrap();
+            let mut state = EditorState::load(path.clone(), &cfg, &libraries).unwrap();
+            assert_eq!(
+                state.workers[0].tools,
+                vec!["read".to_string(), "grep".to_string()]
+            );
+            assert_eq!(
+                state.build_input().workers[0].tools,
+                Some(vec!["read".to_string(), "grep".to_string()])
+            );
+
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Tools);
+            for _ in 0..3 {
+                handle_event(&mut state, &press(KeyCode::Down));
+            }
+            assert_eq!(state.tools_list()[state.tool_cursor].0, "grep");
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            for _ in 0..3 {
+                handle_event(&mut state, &press(KeyCode::Down));
+            }
+            assert_eq!(state.tools_list()[state.tool_cursor].0, "read");
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert!(state.workers[0].tools.is_empty());
+
+            save(&mut state, &cfg, &libraries).unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(!text.contains("tools"), "{text}");
+        });
+    }
+
+    #[test]
+    fn tab_cycles_and_space_dispatches() {
+        let home = demo_tree_home();
+        let cfg = config_for(home.path());
+        let libraries = libraries_for(home.path());
+        crate::config::with_home(home.path(), || {
+            let mut state = named_draft(&cfg, &libraries, "e2e");
+            handle_event(&mut state, &press(KeyCode::Char('c')));
+            assert_eq!(state.focus, Focus::Skills);
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Tools);
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Workers);
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Skills);
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Tools);
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Workers, "full cycle returns to workers");
+
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert_eq!(state.workers[0].pack, vec!["demo-review".to_string()]);
+            assert!(
+                state.workers[0].tools.is_empty(),
+                "workers-space must not touch tools"
+            );
+
+            handle_event(&mut state, &press(KeyCode::Tab));
+            handle_event(&mut state, &press(KeyCode::Tab));
+            assert_eq!(state.focus, Focus::Tools);
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            assert_eq!(state.workers[0].tools, vec!["bash".to_string()]);
+            assert_eq!(
+                state.workers[0].pack,
+                vec!["demo-review".to_string()],
+                "tools-space must not touch pack"
+            );
+        });
+    }
+
+    #[test]
+    fn render_shows_tools_pane() {
+        let home = demo_tree_home();
+        let cfg = config_for(home.path());
+        let libraries = libraries_for(home.path());
+        crate::config::with_home(home.path(), || {
+            let mut state = named_draft(&cfg, &libraries, "e2e");
+            handle_event(&mut state, &press(KeyCode::Char('c')));
+            handle_event(&mut state, &press(KeyCode::Tab));
+            for _ in 0..6 {
+                handle_event(&mut state, &press(KeyCode::Down));
+            }
+            handle_event(&mut state, &press(KeyCode::Char(' ')));
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 40)).unwrap();
+            let frame = terminal
+                .draw(|frame| render(&mut state, frame, frame.area()))
+                .unwrap();
+            let rendered = crate::tui::snap::frame_to_string(frame.buffer, frame.area);
+            assert!(rendered.contains("tools"), "{rendered}");
+            assert!(rendered.contains("[x] read"), "{rendered}");
+            assert!(rendered.contains("164"), "{rendered}");
+            assert!(rendered.contains("tools: read"), "{rendered}");
+
+            let mut state = named_draft(&cfg, &libraries, "plain");
+            let frame = terminal
+                .draw(|frame| render(&mut state, frame, frame.area()))
+                .unwrap();
+            let rendered = crate::tui::snap::frame_to_string(frame.buffer, frame.area);
+            assert!(
+                rendered.contains("(no tool table for adapter none — c to cycle adapter)"),
+                "{rendered}"
+            );
+            assert!(rendered.contains("(no tools selected)"), "{rendered}");
         });
     }
 }

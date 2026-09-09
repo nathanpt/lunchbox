@@ -541,6 +541,10 @@ other subcommand stays non-interactive and scriptable. The former
 policy live as menu routes, picker's start flow is Pantry's, and
 preview's role is covered by the confirmation screen and
 `start --dry-run`.
+The Manifests editor's panes are workers / skills / tools: the tools
+checklist seeds from the probe-pinned adapter tables (ADR-0008 token
+costs) and `a` adds custom or extension names, rendered `?` until a
+probe table prices them.
 
 ### `add` / `update` (ADR-0006)
 

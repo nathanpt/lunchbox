@@ -193,6 +193,13 @@ fn menu_e2e_editor_roundtrip() {
     send(&mut app, "\x1b[B");
     send(&mut app, " ");
     expect(&app, "ok — s save · S save+start");
+    send(&mut app, "c");
+    send(&mut app, "\t");
+    for _ in 0..6 {
+        send(&mut app, "\x1b[B");
+    }
+    send(&mut app, " ");
+    expect(&app, "tools: read");
     send(&mut app, "s");
     expect(&app, "wrote");
     expect(&app, "lunchbox/manifests/e2e.toml");
@@ -208,6 +215,8 @@ fn menu_e2e_editor_roundtrip() {
     assert!(text.contains("pack = ["), "{text}");
     assert!(text.contains("\"demo-review\""), "{text}");
     assert!(text.contains("\"demo-scan\""), "{text}");
+    assert!(text.contains("tools = ["), "{text}");
+    assert!(text.contains("\"read\""), "{text}");
 
     let home2 = fixture_home();
     Command::cargo_bin("lunchbox")
@@ -225,6 +234,16 @@ fn menu_e2e_editor_roundtrip() {
         .current_dir(cwd.path())
         .assert()
         .success();
+    Command::cargo_bin("lunchbox")
+        .unwrap()
+        .args(["start", "--from", "e2e", "--adapter", "pi", "--dry-run"])
+        .env("HOME", home2.path())
+        .current_dir(cwd.path())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("--tools"))
+        .stdout(predicates::str::contains("read"))
+        .stdout(predicates::str::contains("tool_tokens    this run: 164"));
     Command::cargo_bin("lunchbox")
         .unwrap()
         .args(["start", "--from", "missing"])
