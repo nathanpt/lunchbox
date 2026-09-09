@@ -6,6 +6,8 @@ edits that a user would not notice do not belong here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-09
+
 ### Added
 
 - 2026-09-09 — Feature-022 (ADR-0009): run-scoped tool selection.
@@ -25,6 +27,12 @@ edits that a user would not notice do not belong here.
   rendered `?` until priced); Space toggles the focused worker's
   selection, and saves write the per-worker `tools` array (omitted
   when empty).
+
+### Packaging
+
+- 2026-09-09 — v0.4.0 tagged and pushed at
+  https://github.com/nathanpt/lunchbox (`cargo install --locked --git
+  … --tag v0.4.0`; the tagless form installs the default-branch tip).
 
 ## [0.3.0] - 2026-09-08
 

@@ -12,13 +12,15 @@ the source of intent; product narrative will live under
 `docs/product-specs/` as it emerges.
 
 - Current phase: v1 + Path B + scan hook + pantry + driver Skill + menu
-  TUI milestone complete (features 001–018 all passing), distributed as
-  `v0.3.0` (latest tag; `v0.1.0`/`v0.2.0` earlier) — MIT, git-only
+  TUI milestone complete (features 001–023 all passing), distributed as
+  `v0.4.0` (latest tag; `v0.1.0`–`v0.3.0` earlier) — MIT, git-only
   install per ADR-0005; the menu milestone's breaking `tui <screen>`
-  removal ships in `0.3.0` per ADR-0007. Pi + Omp Path A
+  removal shipped in `0.3.0` per ADR-0007. Pi + Omp Path A
   adapters, the README (DESIGN §22/§25), `--from` multi-worker runs
   with run-local agent files and bare-name resolution (ADR-0003/0007),
-  the `scan_command` policy gate with `--override-scan` (ADR-0004),
+  run-scoped tool selection with the editor tools picker and
+  probe-pinned token estimates (ADR-0008/0009), the `scan_command`
+  policy gate with `--override-scan` (ADR-0004),
   thin git acquisition — `add` / `update` into `~/.lunchbox/pantry`
   (ADR-0006), the `skills/lunchbox/` driver Skill, fail-closed pinless
   `start`, and the `lunchbox menu` app (Pantry, Manifests + editor,
