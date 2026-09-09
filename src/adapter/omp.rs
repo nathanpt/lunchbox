@@ -53,6 +53,7 @@ impl Adapter for OmpAdapter {
         run_dir: &Path,
         workdir: &Path,
         _skills: &[String],
+        tools: &[String],
         user_argv: &[String],
     ) -> Result<Vec<String>> {
         let overlay_path = run_dir.join("omp-config.yml");
@@ -61,6 +62,7 @@ impl Adapter for OmpAdapter {
         Ok(["omp".to_string(), "--config".to_string()]
             .into_iter()
             .chain([overlay_path.to_string_lossy().into_owned()])
+            .chain((!tools.is_empty()).then(|| format!("--tools={}", tools.join(","))))
             .chain(user_argv.iter().cloned())
             .collect())
     }
@@ -123,13 +125,24 @@ are printed with an include hint, never auto-loaded."
 }
 
 fn agent_md(spec: &super::AgentSpec) -> String {
+    let tools = if spec.tools.is_empty() {
+        String::new()
+    } else {
+        let bullets: String = spec
+            .tools
+            .iter()
+            .map(|tool| format!("  - {tool}\n"))
+            .collect();
+        format!("tools:\n{bullets}")
+    };
     format!(
-        "---\nname: {}\ndescription: {}\ntools:\n  - read\n  - grep\n  - glob\n  - bash\n---\n\
+        "---\nname: {}\ndescription: {}\n{}---\n\
          You are a Lunchbox run-local agent for this run only. Work only with the Skill \
          packages under {} ({}). Do not search ~/.agents/skills, ~/.omp/agent/skills, or \
          any global skill directory.\n",
         spec.name,
         spec.description,
+        tools,
         spec.pack_dir.display(),
         spec.skills.join(", ")
     )

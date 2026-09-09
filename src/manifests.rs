@@ -12,7 +12,7 @@ pub struct DiscoveredManifest {
 pub enum ManifestState {
     Ok {
         task: String,
-        workers: Vec<(String, Vec<String>)>,
+        workers: Vec<(String, Vec<String>, Option<Vec<String>>)>,
         tokens: u64,
     },
     Broken(String),
@@ -60,7 +60,13 @@ fn discover_in(dirs: &[PathBuf], skills: &BTreeMap<String, u64>) -> Vec<Discover
                         workers: input
                             .workers
                             .iter()
-                            .map(|worker| (worker.name.clone(), worker.pack.clone()))
+                            .map(|worker| {
+                                (
+                                    worker.name.clone(),
+                                    worker.pack.clone(),
+                                    worker.tools.clone(),
+                                )
+                            })
                             .collect(),
                         tokens: manifest_tokens(&input, skills),
                     },
@@ -189,11 +195,18 @@ mod tests {
         assert_eq!(found.len(), 1, "collision must not list both: {found:?}");
         assert_eq!(found[0].name, "run");
         assert_eq!(found[0].path, project.path().join("run.toml"));
-        let ManifestState::Ok { task, workers, tokens } = &found[0].state else {
+        let ManifestState::Ok { task, workers, tokens, .. } = &found[0].state else {
             panic!("expected Ok state");
         };
         assert_eq!(task, "project");
-        assert_eq!(workers, &vec![("w".to_string(), vec!["demo-review".to_string()])]);
+        assert_eq!(
+            workers,
+            &vec![(
+                "w".to_string(),
+                vec!["demo-review".to_string()],
+                None
+            )]
+        );
         assert_eq!(*tokens, 20);
     }
 

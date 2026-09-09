@@ -6,6 +6,20 @@ edits that a user would not notice do not belong here.
 
 ## [Unreleased]
 
+### Added
+
+- 2026-09-09 — Feature-022 (ADR-0009): run-scoped tool selection.
+  `lunchbox start --tool <name>` is repeatable and appends the adapter's
+  allowlist flag (pi `--tools <csv>`, omp `--tools=<csv>`); manifest
+  workers accept `tools = [...]` and `--tool` combined with `--from`
+  fails closed; Path B agent files carry the worker's tools (omitted
+  when unset, replacing the hardcoded lists). A separate
+  `tool_tokens    this run: N` estimate (probe-pinned per-tool tables,
+  `(+k unestimated)` suffix, stderr warning per unknown name) reports
+  what the selection costs; `max_menu_tokens` still gates skills only.
+  Opt-in posture: no selection means no flags, no output lines, no
+  JSON keys — the harness default is unchanged.
+
 ## [0.3.0] - 2026-09-08
 
 ### Added (packaging)

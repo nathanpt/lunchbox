@@ -138,6 +138,7 @@ pub fn render_detail(state: &mut ManifestDetailState, frame: &mut Frame, area: R
             task,
             workers,
             tokens,
+            ..
         } => {
             lines.push(Line::from(vec![label("task"), Span::raw(task.clone())]));
             lines.push(Line::from(vec![
@@ -145,7 +146,7 @@ pub fn render_detail(state: &mut ManifestDetailState, frame: &mut Frame, area: R
                 Span::raw(format!("~{tokens}")),
             ]));
             lines.push(Line::from(""));
-            for (name, pack) in workers {
+            for (name, pack, tools) in workers {
                 lines.push(Line::from(chrome::bold(format!("worker {name}"))));
                 for pin in pack {
                     let base = pin.split_once('@').map_or(pin.as_str(), |(base, _)| base);
@@ -157,6 +158,14 @@ pub fn render_detail(state: &mut ManifestDetailState, frame: &mut Frame, area: R
                         format!("  - {pin}  {tokens}")
                     };
                     lines.push(Line::from(chrome::dim(line)));
+                }
+                if let Some(tools) = tools {
+                    if !tools.is_empty() {
+                        lines.push(Line::from(chrome::dim(format!(
+                            "  tools {}",
+                            tools.join(", ")
+                        ))));
+                    }
                 }
             }
         }
@@ -193,7 +202,11 @@ mod tests {
             path: std::path::PathBuf::from("lunchbox/manifests/rt.toml"),
             state: ManifestState::Ok {
                 task: "t".to_string(),
-                workers: vec![("w".to_string(), vec!["demo-review".to_string()])],
+                workers: vec![(
+                    "w".to_string(),
+                    vec!["demo-review".to_string()],
+                    Some(vec!["read".to_string(), "bash".to_string()]),
+                )],
                 tokens: 20,
             },
         };
@@ -207,5 +220,32 @@ mod tests {
             .unwrap();
         let rendered = crate::tui::snap::frame_to_string(frame.buffer, frame.area);
         assert!(rendered.contains("demo-review  20"), "{rendered}");
+    }
+
+    #[test]
+    fn detail_lists_worker_tools_when_set() {
+        let manifest = DiscoveredManifest {
+            name: "rt".to_string(),
+            path: std::path::PathBuf::from("lunchbox/manifests/rt.toml"),
+            state: ManifestState::Ok {
+                task: "t".to_string(),
+                workers: vec![(
+                    "w".to_string(),
+                    vec!["demo-review".to_string()],
+                    Some(vec!["read".to_string(), "bash".to_string()]),
+                )],
+                tokens: 20,
+            },
+        };
+        let mut state = ManifestDetailState {
+            manifest,
+            tokens: [("demo-review".to_string(), 20u64)].into_iter().collect(),
+        };
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(64, 12)).unwrap();
+        let frame = terminal
+            .draw(|frame| render_detail(&mut state, frame, frame.area()))
+            .unwrap();
+        let rendered = crate::tui::snap::frame_to_string(frame.buffer, frame.area);
+        assert!(rendered.contains("tools read, bash"), "{rendered}");
     }
 }

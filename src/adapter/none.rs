@@ -23,6 +23,7 @@ impl Adapter for NoneAdapter {
         _run_dir: &Path,
         _workdir: &Path,
         _skills: &[String],
+        _tools: &[String],
         _user_argv: &[String],
     ) -> Result<Vec<String>> {
         bail!("adapter none never spawns; the workdir is mounted, not spawned")

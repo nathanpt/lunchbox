@@ -566,7 +566,7 @@ fn two_worker_manifest(dir: &Path, adapter: &str, reviewer_description: bool) ->
     fs::write(
         &path,
         format!(
-            "schema = 1\ntask = \"path b check\"\nadapter = \"{adapter}\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\n{description}pack = [\"demo-scan\"]\n"
+            "schema = 1\ntask = \"path b check\"\nadapter = \"{adapter}\"\n\n[[workers]]\nname = \"parent\"\npack = [\"demo-review\"]\n\n[[workers]]\nname = \"reviewer\"\n{description}pack = [\"demo-scan\"]\ntools = [\"read\", \"grep\", \"find\", \"bash\"]\n"
         ),
     )
     .unwrap();
@@ -917,7 +917,10 @@ fn omp_manifest_overlay_and_agents() {
     assert!(!overlay.contains("agents:"), "print mode keeps the overlay skills-only: {overlay}");
     let agent = fs::read_to_string(run.join("agents").join("reviewer.md")).unwrap();
     assert!(agent.starts_with("---\nname: reviewer\ndescription: Lunchbox run-local agent for worker reviewer\n"), "{agent}");
-    assert!(agent.contains("tools:"), "{agent}");
+    assert!(
+        agent.contains("tools:\n  - read\n  - grep\n  - find\n  - bash\n---"),
+        "{agent}"
+    );
     assert!(
         agent.contains(run.join("workdir").join("packs").join("reviewer").to_str().unwrap()),
         "{agent}"

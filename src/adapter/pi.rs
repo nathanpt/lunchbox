@@ -34,12 +34,17 @@ impl Adapter for PiAdapter {
         _run_dir: &Path,
         workdir: &Path,
         skills: &[String],
+        tools: &[String],
         user_argv: &[String],
     ) -> Result<Vec<String>> {
         let mut argv = vec!["pi".to_string(), "--no-skills".to_string()];
         for skill in skills {
             argv.push("--skill".to_string());
             argv.push(workdir.join(skill).to_string_lossy().into_owned());
+        }
+        if !tools.is_empty() {
+            argv.push("--tools".to_string());
+            argv.push(tools.join(","));
         }
         argv.extend(user_argv.iter().cloned());
         Ok(argv)
@@ -90,15 +95,20 @@ per-invocation agent-dir override, so the files are printed, not auto-loaded."
             .to_string()
     }
 }
-
 fn agent_md(spec: &super::AgentSpec) -> String {
+    let tools = if spec.tools.is_empty() {
+        String::new()
+    } else {
+        format!("tools: {}\n", spec.tools.join(", "))
+    };
     format!(
-        "---\nname: {}\ndescription: {}\ninheritSkills: false\nskillPath: {}\nskills: {}\ntools: \
-         read, grep, find, bash\n---\nWork only with the Skills in your skillPath. Do not \
-         search ~/.agents/skills or any global skill directory.\n",
+        "---\nname: {}\ndescription: {}\ninheritSkills: false\nskillPath: {}\nskills: {}\n{}---\n\
+         Work only with the Skills in your skillPath. Do not search ~/.agents/skills or any \
+         global skill directory.\n",
         spec.name,
         spec.description,
         spec.pack_dir.display(),
-        spec.skills.join(", ")
+        spec.skills.join(", "),
+        tools
     )
 }

@@ -79,6 +79,19 @@ pub fn render(state: &mut ConfirmState, frame: &mut Frame, area: Rect) {
                 "menu_tokens    this run: {tokens}"
             )));
             lines.push(Line::from(format!("task           {}", state.task)));
+            let mut tools: Vec<String> = Vec::new();
+            if let Source::Manifest(input) = &state.source {
+                for worker in &input.workers {
+                    for tool in worker.tools.iter().flatten() {
+                        if !tools.iter().any(|known| known == tool) {
+                            tools.push(tool.clone());
+                        }
+                    }
+                }
+            }
+            if !tools.is_empty() {
+                lines.push(Line::from(format!("tools          {}", tools.join(", "))));
+            }
         }
         Err(error) => {
             lines.push(Line::from(""));
@@ -190,5 +203,35 @@ mod tests {
             handle_event(&mut state, &press(KeyCode::Esc)),
             Action::Pop
         ));
+    }
+
+    #[test]
+    fn confirm_screen_manifest_shows_tools_line() {
+        let home = crate::tui::testkit::demo_tree_home();
+        let (_runs, cfg) = config_for(home.path());
+        let libraries = vec![home.path().join(".agents").join("skills")];
+        let input = crate::run::ManifestInput {
+            schema: 1,
+            task: "t".to_string(),
+            adapter: "none".to_string(),
+            run_id: None,
+            created_at: None,
+            harness_argv: None,
+            budget: None,
+            workers: vec![crate::run::Worker {
+                name: "default".to_string(),
+                pack: vec!["demo-review".to_string()],
+                description: None,
+                tools: Some(vec!["read".to_string(), "bash".to_string()]),
+            }],
+        };
+        let mut state = ConfirmState::new(Source::Manifest(input), &cfg, &libraries);
+        assert!(state.resolved.is_ok(), "{:?}", state.resolved);
+        let mut terminal = Terminal::new(TestBackend::new(72, 12)).unwrap();
+        let frame = terminal
+            .draw(|frame| render(&mut state, frame, frame.area()))
+            .unwrap();
+        let rendered = frame_to_string(frame.buffer, frame.area);
+        assert!(rendered.contains("tools          read, bash"), "{rendered}");
     }
 }

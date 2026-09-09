@@ -257,6 +257,7 @@ mod tests {
             name: name.to_string(),
             pack: pack.iter().map(|s| s.to_string()).collect(),
             description: None,
+            tools: None,
         }
     }
 

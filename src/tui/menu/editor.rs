@@ -221,6 +221,7 @@ impl EditorState {
                     name: worker.name.clone(),
                     pack: worker.pack.clone(),
                     description: None,
+                    tools: None,
                 })
                 .collect(),
         }

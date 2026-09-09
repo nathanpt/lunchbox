@@ -323,6 +323,23 @@
       "dependencies": [
         "feature-017"
       ]
+    },
+    {
+      "id": "feature-022",
+      "category": "functional",
+      "description": "run-scoped tool selection: repeatable --tool on start and per-worker tools in manifests drive pi/omp allowlist flags and Path B agent files, with a separate probe-pinned tool_tokens estimate (ADR-0009)",
+      "steps": [
+        "start --tool <name> (repeatable) appends pi --tools <csv> / omp --tools=<csv> to the spawn argv; --tool and --from are mutually exclusive; no selection means no flags and the harness default",
+        "manifest workers accept tools = [...]; empty names fail validation before mounting; Path B agent files emit the worker's tools (omitted when unset) instead of a hardcoded list",
+        "tool_tokens this run: N reports the ADR-0008-style per-tool estimate with a (+k unestimated) suffix and a stderr warning per unknown name; the audit gains a tools event after mounted; --json gains tools/tool_tokens/unestimated_tools only when a selection exists",
+        "menu Manifests detail and the confirm screen render manifest tools; ADR-0009 records the decision; DESIGN §12/§13/§14/§16 updated",
+        "cargo test green in both feature configurations; dry-run smoke shows pi --tools read,bash and omp --tools=read,bash with tool_tokens 292 for the demo selection"
+      ],
+      "passes": true,
+      "priority": 20,
+      "dependencies": [
+        "feature-021"
+      ]
     }
   ]
 }

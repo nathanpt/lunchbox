@@ -7,6 +7,7 @@ use std::process::Command;
 pub mod none;
 pub mod omp;
 pub mod pi;
+pub mod tools;
 
 pub use none::NoneAdapter;
 pub use omp::OmpAdapter;
@@ -20,6 +21,7 @@ pub struct AgentSpec {
     pub description: String,
     pub pack_dir: PathBuf,
     pub skills: Vec<String>,
+    pub tools: Vec<String>,
 }
 
 pub struct AgentFiles {
@@ -58,6 +60,7 @@ pub trait Adapter {
         run_dir: &Path,
         workdir: &Path,
         skills: &[String],
+        tools: &[String],
         user_argv: &[String],
     ) -> Result<Vec<String>>;
 
@@ -343,7 +346,7 @@ mod tests {
     #[test]
     fn none_adapter_never_spawns() {
         let err = NoneAdapter
-            .isolation_argv(Path::new("/r"), Path::new("/w"), &["a".to_string()], &[])
+            .isolation_argv(Path::new("/r"), Path::new("/w"), &["a".to_string()], &[], &[])
             .unwrap_err()
             .to_string();
         assert!(err.contains("adapter none never spawns"), "{err}");
@@ -356,6 +359,7 @@ mod tests {
                 Path::new("/runs/lbx_x"),
                 Path::new("/runs/lbx_x/workdir"),
                 &["demo-review".to_string(), "demo-scan".to_string()],
+                &[],
                 &["pi".to_string(), "-p".to_string(), "hello".to_string()],
             )
             .unwrap();
@@ -371,6 +375,78 @@ mod tests {
                 "pi".to_string(),
                 "-p".to_string(),
                 "hello".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn pi_isolation_argv_appends_tools_allowlist() {
+        let argv = PiAdapter
+            .isolation_argv(
+                Path::new("/runs/lbx_x"),
+                Path::new("/runs/lbx_x/workdir"),
+                &["demo-review".to_string()],
+                &["read".to_string(), "bash".to_string()],
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            argv,
+            vec![
+                "pi".to_string(),
+                "--no-skills".to_string(),
+                "--skill".to_string(),
+                "/runs/lbx_x/workdir/demo-review".to_string(),
+                "--tools".to_string(),
+                "read,bash".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn omp_isolation_argv_is_exact() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let argv = OmpAdapter
+            .isolation_argv(
+                dir.path(),
+                &dir.path().join("workdir"),
+                &[],
+                &[],
+                &["omp".to_string(), "-p".to_string(), "hi".to_string()],
+            )
+            .unwrap();
+        assert_eq!(
+            argv,
+            vec![
+                "omp".to_string(),
+                "--config".to_string(),
+                dir.path().join("omp-config.yml").to_string_lossy().into_owned(),
+                "omp".to_string(),
+                "-p".to_string(),
+                "hi".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn omp_isolation_argv_appends_tools_allowlist() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let argv = OmpAdapter
+            .isolation_argv(
+                dir.path(),
+                &dir.path().join("workdir"),
+                &[],
+                &["read".to_string(), "bash".to_string()],
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            argv,
+            vec![
+                "omp".to_string(),
+                "--config".to_string(),
+                dir.path().join("omp-config.yml").to_string_lossy().into_owned(),
+                "--tools=read,bash".to_string(),
             ]
         );
     }
@@ -395,6 +471,7 @@ mod tests {
             description: "Review specialist".to_string(),
             pack_dir: pack_dir.clone(),
             skills: vec!["demo-scan".to_string()],
+            tools: Vec::new(),
         };
         let files = PiAdapter.write_run_agents(dir.path(), &[spec]).unwrap();
         assert_eq!(files.loaded, false);
@@ -406,10 +483,53 @@ mod tests {
         assert_eq!(
             text,
             format!(
-                "---\nname: reviewer\ndescription: Review specialist\ninheritSkills: false\nskillPath: {}\nskills: demo-scan\ntools: read, grep, find, bash\n---\nWork only with the Skills in your skillPath. Do not search ~/.agents/skills or any global skill directory.\n",
+                "---\nname: reviewer\ndescription: Review specialist\ninheritSkills: false\nskillPath: {}\nskills: demo-scan\n---\nWork only with the Skills in your skillPath. Do not search ~/.agents/skills or any global skill directory.\n",
                 pack_dir.display()
             )
         );
+    }
+
+    #[test]
+    fn pi_write_run_agents_emits_selected_tools() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let spec = AgentSpec {
+            name: "reviewer".to_string(),
+            description: "Review specialist".to_string(),
+            pack_dir: dir.path().join("packs").join("reviewer"),
+            skills: vec!["demo-scan".to_string()],
+            tools: vec!["read".to_string(), "bash".to_string()],
+        };
+        PiAdapter.write_run_agents(dir.path(), &[spec]).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("agents").join("reviewer.md")).unwrap();
+        assert!(
+            text.contains("skills: demo-scan\ntools: read, bash\n---"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn omp_write_run_agents_emits_selected_tools_as_yaml() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let with = AgentSpec {
+            name: "scanner".to_string(),
+            description: "Scan specialist".to_string(),
+            pack_dir: dir.path().join("packs").join("scanner"),
+            skills: vec!["demo-scan".to_string()],
+            tools: vec!["read".to_string(), "grep".to_string()],
+        };
+        OmpAdapter.write_run_agents(dir.path(), &[with]).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("agents").join("scanner.md")).unwrap();
+        assert!(text.contains("tools:\n  - read\n  - grep\n---"), "{text}");
+        let without = AgentSpec {
+            name: "plain".to_string(),
+            description: "Plain agent".to_string(),
+            pack_dir: dir.path().join("packs").join("plain"),
+            skills: vec!["demo-scan".to_string()],
+            tools: Vec::new(),
+        };
+        OmpAdapter.write_run_agents(dir.path(), &[without]).unwrap();
+        let text = std::fs::read_to_string(dir.path().join("agents").join("plain.md")).unwrap();
+        assert!(!text.contains("tools"), "{text}");
     }
 
 

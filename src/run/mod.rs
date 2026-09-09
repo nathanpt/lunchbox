@@ -42,6 +42,8 @@ pub struct Worker {
     pub pack: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
 }
 
 impl Worker {
@@ -50,6 +52,7 @@ impl Worker {
             name: "default".to_string(),
             pack,
             description: None,
+            tools: None,
         }
     }
 
@@ -119,6 +122,13 @@ impl ManifestInput {
             }
             if worker.pack.is_empty() {
                 bail!("worker '{}' has an empty pack", worker.name);
+            }
+            if worker
+                .tools
+                .as_ref()
+                .is_some_and(|tools| tools.iter().any(String::is_empty))
+            {
+                bail!("worker '{}': empty tool name", worker.name);
             }
         }
         Ok(self)
@@ -434,6 +444,23 @@ fn mount_run(
         run_id,
         json!({"event": "mounted", "mode": mount_mode.as_str(), "workdir": workdir}),
     )?;
+    if let Some(tools) = workers
+        .first()
+        .and_then(|worker| worker.tools.as_ref())
+        .filter(|tools| !tools.is_empty())
+    {
+        let (estimated, unestimated) = crate::adapter::tools::estimate(adapter_name, tools);
+        append_audit(
+            run_dir,
+            run_id,
+            json!({
+                "event": "tools",
+                "selected": tools,
+                "estimated_tokens": estimated,
+                "unestimated": unestimated,
+            }),
+        )?;
+    }
     let worker_tokens = workers
         .iter()
         .map(|worker| WorkerTokens {
@@ -739,6 +766,7 @@ mod tests {
             name: name.to_string(),
             pack: pack.iter().map(|s| s.to_string()).collect(),
             description: None,
+            tools: None,
         }
     }
 

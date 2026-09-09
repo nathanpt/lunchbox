@@ -376,6 +376,14 @@ both heavy and wrong for whichever model the worker actually runs.
 Also compute `without_lunchbox` by scanning the adapter's usual
 global+project skill dirs (same estimator). Print both on `start` and
 `doctor`.
+
+Tool definitions cost context the same way, so `start` reports a
+separate `tool_tokens` line when a run selects tools: per-tool
+`ceil(chars/4)` over the provider payload (`{name, description,
+parameters}`), probe-pinned per adapter (ADR-0009). Names missing from
+the pinned table surface as unestimated instead of being dropped.
+`max_menu_tokens` keeps gating skills only.
+
 Never dump pack text into a subagent system prompt. That double-pays and bypasses Stage A.
 
 ---
@@ -398,6 +406,10 @@ pi --no-skills --skill <workdir>/<pack> [user args…]
 
 or equivalent settings overlay that **does not** merge `~/.claude/skills` / `~/.agents/skills`.
 
+Tool allowlist (ADR-0009): `--tools <csv>` is appended after the
+`--skill` flags when the run selects tools; no selection means no flag
+and pi's default tool set.
+
 If Pi cannot disable default scan, the adapter must error with a clear message. Do not start a worker and pretend isolation exists.
 
 ### Omp
@@ -414,6 +426,10 @@ Omp (oh-my-pi) is in the same family. Adapter must discover:
   setting `skills.customDirectories` to the workdir with every `enable*` source toggle
   false — verified live on omp 18.1.11 (headless probe reply listed exactly the mounted
   skill; the foreign pantry appeared only without the overlay)
+
+Tool allowlist (ADR-0009): `--tools=<csv>` is appended after the
+`--config` overlay when the run selects tools; no selection means no
+flag and omp's default (all tools).
 
 Same rule: if discovery cannot be disabled, refuse to claim Path A isolation.
 
@@ -455,12 +471,16 @@ description: Review specialist for this Lunchbox run only
 inheritSkills: false
 skillPath: /home/maya/.lunchbox/runs/lbx_…/workdir/packs/reviewer
 skills: code-review, secrets-scan
-tools: read, grep, find, bash
+tools: read, bash
 ---
 Review the change. Use only the Skills in your skillPath. Do not search ~/.agents/skills.
 ```
 
 Omp task-agent / subagent config should get the same treatment: a run-local copy, not a patch to `~/.omp/agent/`.
+
+The `tools` line comes from the manifest worker's `tools = [...]`
+(ADR-0009) and is omitted when the worker selects none — never a
+hardcoded list.
 
 When the run ends, those files die with the run dir.
 
@@ -500,7 +520,7 @@ Binary name: `lunchbox`. Short alias `lbx` if you add one; do not block on it.
 
 ```text
 lunchbox doctor [--adapter pi|omp] [--json]
-lunchbox start [options] [--override-scan] [-- <harness argv>]
+lunchbox start [options] [--tool NAME] [--override-scan] [-- <harness argv>]
 lunchbox status [run_id]
 lunchbox finish [run_id]
 lunchbox abort [run_id]
@@ -575,7 +595,12 @@ pins belong in the manifest workers; `--adapter`/`--task` flags win over the
 manifest's fields; manifest `[budget] max_menu_tokens` wins over config; the
 supplied manifest's `run_id`/`created_at`/`harness_argv` are regenerated.
 Invalid manifests (unknown key, schema ≠ 1, no workers, duplicate worker
-name, empty pack) fail closed with no run dir left behind.
+name, empty pack, empty tool name) fail closed with no run dir left
+behind. `--tool <name>` (repeatable) selects the run's tool allowlist
+(ADR-0009) and is mutually exclusive with `--from` — set `tools` per
+worker in the manifest instead. Posture is opt-in: no selection means
+no flags and the harness default (all tools), and the output below
+shows no `tools`/`tool_tokens` lines.
 
 Output (human):
 
@@ -584,6 +609,8 @@ run            lbx_20260905_153012_a1b2
 workdir        ~/.lunchbox/runs/…/workdir
 skills         code-review@sha256:6f2c…  secrets-scan@sha256:91aa…
 menu_tokens    this run: 275
+tools          read, bash (2)
+tool_tokens    this run: 292
 without        ~18400  (28 skills on pi global+project)
 isolation      path A flags applied: --no-skills --skill <workdir>
 unmount        run lunchbox finish lbx_…   (auto on --wait exit)

@@ -84,6 +84,8 @@ struct StartArgs {
     task: Option<String>,
     #[arg(long = "skill", value_name = "PIN")]
     skills: Vec<String>,
+    #[arg(long = "tool", value_name = "TOOL")]
+    tools: Vec<String>,
     #[arg(long)]
     adapter: Option<String>,
     #[arg(long = "library", value_name = "PATH")]
@@ -249,6 +251,9 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
     if args.skills.is_empty() && args.from.is_none() {
         bail!("no skills pinned: pass --skill <name>[@sha256:<64 hex>], --from <manifest>, or use lunchbox menu");
     }
+    if !args.tools.is_empty() && args.from.is_some() {
+        bail!("cannot combine --tool with --from (set tools per worker in the manifest)");
+    }
     let cfg = Config::load()?;
     let mut harness_argv = args.harness_argv.clone();
     if harness_argv.first().map(String::as_str) == Some("--") {
@@ -276,15 +281,19 @@ fn cmd_start(args: StartArgs) -> Result<ExitCode> {
                 true,
             )
         }
-        None => (
-            args.adapter
-                .clone()
-                .unwrap_or_else(|| cfg.default_adapter.clone()),
-            args.task.clone().unwrap_or_default(),
-            cfg.max_menu_tokens,
-            vec![run::Worker::default_pack(args.skills.clone())],
-            false,
-        ),
+        None => {
+            let mut worker = run::Worker::default_pack(args.skills.clone());
+            worker.tools = (!args.tools.is_empty()).then(|| args.tools.clone());
+            (
+                args.adapter
+                    .clone()
+                    .unwrap_or_else(|| cfg.default_adapter.clone()),
+                args.task.clone().unwrap_or_default(),
+                cfg.max_menu_tokens,
+                vec![worker],
+                false,
+            )
+        }
     };
     let adapter = adapter::resolve_adapter(&adapter_name)?;
     let mut signals = Signals::new([SIGINT, SIGTERM])?;
@@ -352,6 +361,19 @@ fn start_run(
     let workdir = workdir.as_path();
     let scan_root = scan_root.as_path();
     let parent_skills: Vec<String> = workers[0].pack.clone();
+    let tools: Vec<String> = workers[0].tools.clone().unwrap_or_default();
+    let tool_estimate =
+        (!tools.is_empty()).then(|| adapter::tools::estimate(&adapter_name, &tools));
+    if tool_estimate.is_some() {
+        let known = adapter::tools::table(&adapter_name);
+        for tool in tools.iter().filter(|tool| {
+            known.is_some_and(|table| !table.iter().any(|entry| entry.name == tool.as_str()))
+        }) {
+            eprintln!(
+                "warning: no token estimate for tool '{tool}' on {adapter_name} (not a builtin?)"
+            );
+        }
+    }
 
     if let Some(signal) = signals.pending().next() {
         let _ = std::fs::remove_dir_all(run_dir);
@@ -368,6 +390,7 @@ fn start_run(
                 }),
                 pack_dir: run::pack_dir(workdir, &worker.name),
                 skills: worker.pack.clone(),
+                tools: worker.tools.clone().unwrap_or_default(),
             })
             .collect();
         let files = adapter.write_run_agents(run_dir, &specs)?;
@@ -403,6 +426,11 @@ fn start_run(
             "mount_mode": mount_mode.as_str(),
             "workers": worker_tokens.iter().map(|w| json!({"name": w.name, "menu_tokens": w.menu_tokens})).collect::<Vec<_>>(),
         });
+        if let Some((tokens, unestimated)) = &tool_estimate {
+            output["tools"] = json!(tools);
+            output["tool_tokens"] = json!(tokens);
+            output["unestimated_tools"] = json!(unestimated);
+        }
         if let Some(files) = &agent_files {
             output["agents"] = json!({
                 "files": agent_file_names(&files.files),
@@ -415,6 +443,14 @@ fn start_run(
         println!("workdir        {}", workdir.display());
         println!("skills         {}", pins.join("  "));
         println!("menu_tokens    this run: {menu_tokens}");
+        if let Some((tokens, unestimated)) = &tool_estimate {
+            println!("tools          {} ({})", tools.join(", "), tools.len());
+            if *unestimated > 0 {
+                println!("tool_tokens    this run: {tokens} (+{unestimated} unestimated)");
+            } else {
+                println!("tool_tokens    this run: {tokens}");
+            }
+        }
         if without_skills == 0 {
             println!("without        {without_tokens}  (no skills found in {adapter_name} skill dirs)");
         } else {
@@ -441,7 +477,13 @@ fn start_run(
         return Ok(ExitCode::SUCCESS);
     }
 
-    let argv = adapter.isolation_argv(run_dir, scan_root, &parent_skills, harness_argv)?;
+    let argv = adapter.isolation_argv(
+        run_dir,
+        scan_root,
+        &parent_skills,
+        workers[0].tools.as_deref().unwrap_or(&[]),
+        harness_argv,
+    )?;
     if args.dry_run {
         for token in &argv {
             println!("{}", shell_quote(token));

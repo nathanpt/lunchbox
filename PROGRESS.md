@@ -1,6 +1,6 @@
 # Progress — lunchbox
 
-Last updated: 2026-09-08 (menu milestone complete, features 016–018)
+Last updated: 2026-09-09 (tool selection — feature-022)
 
 ## Current repository state
 
@@ -11,15 +11,51 @@ complete. Core CLI, Pi and Omp Path A adapters, `--from` manifests
 fail-closed pinless `start`, and the `lunchbox menu` app (Pantry,
 Manifests + editor, Doctor, Policy, confirmation-gated mounts) that
 replaced the four `tui <screen>` subcommands (ADR-0007; breaking,
-0.3.0-pending). 132 unit + 33 cli + 4 pty E2E tests green in the
-default configuration, 107 + 33 with `--no-default-features`, zero
-warnings in both. **Features 001–018 all pass.** Branch `main`; tree
+0.3.0-pending). 150 unit + 33 cli + 4 menu_pty tests green in the
+default configuration, 118 + 33 with `--no-default-features`, zero
+warnings in both. Branch `main`; tree
 clean after each phase commit.
+
+Feature-022 (run-scoped tool selection, ADR-0009) is complete:
+repeatable `--tool` on `start`, per-worker `tools` in manifests,
+pi/omp allowlist flags, manifest-driven Path B agent `tools:` lines,
+and a separate probe-pinned `tool_tokens` estimate. **Features 001–022
+all pass.**
 
 Distribution (ADR-0005): MIT, git-only install from
 https://github.com/nathanpt/lunchbox, tagged `v0.3.0` (latest;
 `v0.1.0`/`v0.2.0` earlier); crates.io and prebuilt Release binaries
 deferred.
+
+## Tool selection — feature-022 (2026-09-09, this machine)
+
+Run-scoped tool control + honest tool token estimates (ADR-0009).
+Probed both installed harnesses on 2026-09-09: pi 0.84.4 default
+selected tools captured via the extension API
+(`before_agent_start` → `selectedTools`: read, bash, edit, write;
+8 builtins registered); omp 18.1.14 wire capture via the
+`before_provider_request` hook (11 tools on the default wire,
+ast_edit/debug/lsp surface when named; goal/experiment family
+config-gated, omitted from the table as unextractable).
+Estimates = `ceil(chars/4)` over each tool's provider payload
+(`{name, description, parameters}`), pinned in `src/adapter/tools.rs`.
+Posture is opt-in (no selection → no flags → harness default, output
+unchanged); `tool_tokens` is separate from `menu_tokens` and
+`max_menu_tokens` keeps gating skills only.
+
+| Check | Command | Result |
+|---|---|---|
+| Full suite (default features) | `cargo test` | ok — 150 unit + 33 cli + 4 menu_pty, 0 failed, 0 warnings |
+| Full suite (CLI-only) | `cargo test --no-default-features` | ok — 118 + 33, 0 failed, 0 warnings |
+| Path A pi | `HOME=$T lunchbox start --library testdata/skills --skill demo-review --adapter pi --tool read --tool bash --dry-run` | argv tail `--tools` + `read,bash`; `tool_tokens    this run: 292` (table[read] 164 + table[bash] 128) |
+| Path A omp | same with `--adapter omp` | argv `--tools=read,bash` |
+| Posture | same without `--tool` (human + `--json`) | no `--tools` in argv, no `tools`/`tool_tokens` lines, no JSON keys |
+| Unknown tool | `--tool nope` | `tool_tokens    this run: 164 (+1 unestimated)` + `warning: no token estimate for tool 'nope' on pi (not a builtin?)`; omp twin warns for `find` (849 + 1) |
+| Mutual exclusion | `start --from x --tool read` | exit 1, `cannot combine --tool with --from (set tools per worker in the manifest)` |
+| Path B | `from_manifest_pi_prints_agents`, `omp_manifest_overlay_and_agents` | agent files carry the manifest worker's `tools` (pi CSV line, omp YAML bullets) |
+| Manifest validation | worker `tools = [""]` | exit 1 `worker 'w': empty tool name`, no run dir created |
+| Audit | dry-run audit.jsonl | events `resolved, mounted, tools` — tools event: `selected`, `estimated_tokens: 292`, `unestimated: 0` |
+| Adapter exactness | `cargo test --bin lunchbox isolation_argv` | pi/omp exactness + tools-arm tests green |
 
 ## Menu milestone — feature-021 (2026-09-08, this machine)
 

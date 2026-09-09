@@ -472,6 +472,7 @@ mod tests {
             name: "default".to_string(),
             pack: pins(pack),
             description: None,
+            tools: None,
         }
     }
 
@@ -517,8 +518,8 @@ mod tests {
         let cfg = config_with_root(&dir.path().to_path_buf());
         let locked = resolve(&pins(&["alpha", "beta"]), &cfg, &[], false).unwrap();
         let workers = vec![
-            crate::run::Worker { name: "a".to_string(), pack: pins(&["alpha"]), description: None },
-            crate::run::Worker { name: "b".to_string(), pack: pins(&["beta"]), description: None },
+            crate::run::Worker { name: "a".to_string(), pack: pins(&["alpha"]), description: None, tools: None },
+            crate::run::Worker { name: "b".to_string(), pack: pins(&["beta"]), description: None, tools: None },
         ];
         let cap = workers.iter().map(|w| w.menu_tokens(&locked)).max().unwrap();
         assert!(enforce_worker_budget(&workers, &locked, cap, true).is_ok());
@@ -526,6 +527,7 @@ mod tests {
             name: "u".to_string(),
             pack: pins(&["alpha", "beta"]),
             description: None,
+            tools: None,
         }];
         assert!(enforce_worker_budget(&union_only, &locked, cap, true).is_err());
     }

@@ -21,6 +21,10 @@ user-visible behavior.
 - `0003` — Path B pack layout and `--from` manifest semantics: [0003-path-b-packs-and-from-semantics.md](0003-path-b-packs-and-from-semantics.md) (accepted 2026-09-06).
 - `0004` — Scan-hook invocation, lock vocabulary, and override semantics: [0004-scan-hook-contract.md](0004-scan-hook-contract.md) (accepted 2026-09-06).
 - `0005` — Distribution: git-install via GitHub, MIT, no crates.io in v1: [0005-distribution-git-install-mit.md](0005-distribution-git-install-mit.md) (accepted 2026-09-06).
+- `0006` — Thin git installer (`add`/`update` into `~/.lunchbox/pantry`): [0006-thin-git-installer.md](0006-thin-git-installer.md) (accepted 2026-09-08).
+- `0007` — Menu TUI surface replaces the four single-purpose screens: [0007-menu-tui-surface.md](0007-menu-tui-surface.md) (accepted 2026-09-08).
+- `0008` — Calibrated Stage A token budget: [0008-calibrated-token-budget.md](0008-calibrated-token-budget.md) (accepted 2026-09-08).
+- `0009` — Run-scoped tool selection and `tool_tokens`: [0009-run-scoped-tool-selection.md](0009-run-scoped-tool-selection.md) (accepted 2026-09-09).
 
 ## Template
 
